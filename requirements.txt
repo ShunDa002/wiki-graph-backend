@@ -1,0 +1,14 @@
+streamlit
+python-dotenv
+pyyaml
+scikit-learn
+langchain-core
+langchain-openrouter
+ipykernel
+fastapi
+uvicorn
+langgraph
+pydantic-settings
+PyYAML
+pytest
+httpx
