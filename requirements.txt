@@ -6,7 +6,7 @@ langchain-core
 langchain-openrouter
 ipykernel
 fastapi
-uvicorn
+# uvicorn
 langgraph
 pydantic-settings
 PyYAML
