@@ -3,7 +3,6 @@ from pathlib import Path
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 DEFAULT_GRAPH_SOURCE_FOLDERS = [
     "sources",
     "concepts",
@@ -31,7 +30,7 @@ class Settings(BaseSettings):
     chat_top_k: int = Field(4, ge=1, le=20)
     chat_max_page_chars: int = Field(12_000, ge=500, le=100_000)
     chat_max_total_context_chars: int = Field(35_000, ge=1_000, le=500_000)
-    wiki_reload_api_key: str | None = None
+    wiki_reload_secret_key: str | None = None
 
     graph_cache_enabled: bool = True
     graph_write_snapshot: bool = True

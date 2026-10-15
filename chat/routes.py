@@ -16,7 +16,7 @@ def make_chat_router(chat_service, settings):
     def authorize_reload(
         x_graph_api_key: str | None = Header(default=None),
     ) -> None:
-        expected = settings.wiki_reload_api_key or settings.graph_rebuild_secret_key
+        expected = settings.wiki_reload_secret_key or settings.graph_rebuild_secret_key
         if not expected or x_graph_api_key != expected:
             raise HTTPException(status_code=403, detail="Forbidden")
 
