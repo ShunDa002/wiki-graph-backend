@@ -1,13 +1,13 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: LLM Wiki FastAPI backend on Lambda using an ECR image.
 Parameters:
-  FunctionName: {Type: String, Default: llm-wiki-api}
-  ImageUri: {Type: String}
-  OpenRouterApiKey: {Type: String, NoEcho: true}
-  OpenRouterModel: {Type: String, Default: openrouter/free}
-  FrontendOrigin: {Type: String, Default: "http://localhost:3000"}
-  GraphRebuildApiKey: {Type: String, NoEcho: true}
-  WikiReloadApiKey: {Type: String, NoEcho: true}
+  FunctionName: { Type: String, Default: llm-wiki-api }
+  ImageUri: { Type: String }
+  OpenRouterApiKey: { Type: String, NoEcho: true }
+  OpenRouterModel: { Type: String, Default: openrouter/free }
+  FrontendOrigin: { Type: String, Default: "http://localhost:3000" }
+  GraphRebuildApiKey: { Type: String, NoEcho: true }
+  WikiReloadApiKey: { Type: String, NoEcho: true }
   LogRetentionDays:
     Type: Number
     Default: 14
@@ -20,7 +20,7 @@ Resources:
         Version: "2012-10-17"
         Statement:
           - Effect: Allow
-            Principal: {Service: lambda.amazonaws.com}
+            Principal: { Service: lambda.amazonaws.com }
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
@@ -29,12 +29,12 @@ Resources:
     Properties:
       FunctionName: !Ref FunctionName
       PackageType: Image
-      Code: {ImageUri: !Ref ImageUri}
+      Code: { ImageUri: !Ref ImageUri }
       Role: !GetAtt LambdaExecutionRole.Arn
       Architectures: [arm64]
       MemorySize: 2048
       Timeout: 120
-      EphemeralStorage: {Size: 1024}
+      EphemeralStorage: { Size: 1024 }
       Environment:
         Variables:
           WIKI_REPO_DIR: /var/task/data/source-repo
@@ -44,7 +44,7 @@ Resources:
           GRAPH_CACHE_ENABLED: "true"
           GRAPH_SOURCE_FOLDERS: '["sources","concepts","decisions","questions","syntheses","experiments","projects"]'
           CHAT_SOURCE_FOLDERS: '["sources","concepts"]'
-          FRONTEND_ORIGINS: !Sub '["${FrontendOrigin}"]'
+          FRONTEND_ORIGIN: !Sub '["${FrontendOrigin}"]'
           OPENROUTER_API_KEY: !Ref OpenRouterApiKey
           OPENROUTER_MODEL: !Ref OpenRouterModel
           GRAPH_REBUILD_API_KEY: !Ref GraphRebuildApiKey
@@ -83,5 +83,5 @@ Resources:
       Principal: "*"
       InvokedViaFunctionUrl: true
 Outputs:
-  FunctionName: {Value: !Ref WikiApiFunction}
-  FunctionUrl: {Value: !GetAtt WikiApiFunctionUrl.FunctionUrl}
+  FunctionName: { Value: !Ref WikiApiFunction }
+  FunctionUrl: { Value: !GetAtt WikiApiFunctionUrl.FunctionUrl }
