@@ -7,7 +7,6 @@ on:
       - test
   workflow_dispatch:
 
-# 当前使用 IAM User access key，不需要 id-token: write。
 permissions:
   contents: read
 
@@ -29,7 +28,6 @@ jobs:
     runs-on: ubuntu-24.04-arm
     environment: production
 
-    # 这些变量会提供给 job 中的所有步骤。
     env:
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       GRAPH_REBUILD_SECRET_KEY: ${{ secrets.GRAPH_REBUILD_SECRET_KEY }}
@@ -38,6 +36,20 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Show repository and submodule status
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Git commit: $GITHUB_SHA"
+          echo "Repository root:"
+          pwd
+
+          echo "Submodule status:"
+          git submodule status --recursive || true
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -90,14 +102,14 @@ jobs:
 
           case "$AWS_REGION" in
             *[!a-z0-9-]*|"")
-              echo "AWS_REGION contains invalid characters."
+              echo "::error::AWS_REGION contains invalid characters."
               exit 1
               ;;
           esac
 
           case "$ECR_REPOSITORY" in
             *://*|*.amazonaws.com/*)
-              echo "ECR_REPOSITORY must contain only the repository name."
+              echo "::error::ECR_REPOSITORY must contain only the repository name."
               echo "Example: wiki-graph-backend"
               exit 1
               ;;
@@ -107,17 +119,16 @@ jobs:
             http://*|https://*)
               ;;
             *)
-              echo "FRONTEND_ORIGIN must start with http:// or https://"
+              echo "::error::FRONTEND_ORIGIN must start with http:// or https://"
               exit 1
               ;;
           esac
 
-          # Lambda Function URL CORS expects an origin, not a URL path.
           FRONTEND_WITHOUT_SCHEME="${FRONTEND_ORIGIN#http://}"
           FRONTEND_WITHOUT_SCHEME="${FRONTEND_WITHOUT_SCHEME#https://}"
 
           if [[ "$FRONTEND_WITHOUT_SCHEME" == */* ]]; then
-            echo "FRONTEND_ORIGIN must not contain a URL path."
+            echo "::error::FRONTEND_ORIGIN must not contain a path or trailing slash."
             echo "Use: https://example.com"
             echo "Not: https://example.com/path"
             exit 1
@@ -129,20 +140,64 @@ jobs:
           echo "Lambda function: $FUNCTION_NAME"
           echo "Frontend origin: $FRONTEND_ORIGIN"
 
+      - name: Verify Wiki source exists
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          WIKI_SOURCE="data/source-repo/wiki"
+
+          if [[ ! -d "$WIKI_SOURCE" ]]; then
+            echo "::error::Wiki source directory does not exist: $WIKI_SOURCE"
+
+            echo "Available directories:"
+            find . \
+              -maxdepth 5 \
+              -type d \
+              -not -path './.git/*' \
+              -print
+
+            exit 1
+          fi
+
+          FILE_COUNT="$(
+            find "$WIKI_SOURCE" \
+              -type f \
+              | wc -l
+          )"
+
+          FILE_COUNT="${FILE_COUNT//[[:space:]]/}"
+
+          if [[ "$FILE_COUNT" -eq 0 ]]; then
+            echo "::error::Wiki source directory is empty: $WIKI_SOURCE"
+            exit 1
+          fi
+
+          echo "Wiki source directory: $WIKI_SOURCE"
+          echo "Wiki file count: $FILE_COUNT"
+
+          echo "Sample Wiki files:"
+          find "$WIKI_SOURCE" \
+            -maxdepth 3 \
+            -type f \
+            | head -n 20
+
       - name: Ensure ECR repository exists
         shell: bash
         run: |
           set -euo pipefail
 
           if aws ecr describe-repositories \
+            --region "$AWS_REGION" \
             --repository-names "$ECR_REPOSITORY" \
             >/dev/null 2>&1
           then
             echo "ECR repository already exists: $ECR_REPOSITORY"
           else
-            echo "ECR repository not found. Creating: $ECR_REPOSITORY"
+            echo "Creating ECR repository: $ECR_REPOSITORY"
 
             aws ecr create-repository \
+              --region "$AWS_REGION" \
               --repository-name "$ECR_REPOSITORY" \
               --image-scanning-configuration scanOnPush=true \
               --image-tag-mutability IMMUTABLE \
@@ -190,10 +245,77 @@ jobs:
           set -euo pipefail
 
           aws ecr describe-images \
+            --region "$AWS_REGION" \
             --repository-name "$ECR_REPOSITORY" \
             --image-ids imageTag="$GITHUB_SHA" \
-            --query 'imageDetails[0].{Digest:imageDigest,PushedAt:imagePushedAt,Size:imageSizeInBytes}' \
+            --query \
+              'imageDetails[0].{
+                Digest:imageDigest,
+                PushedAt:imagePushedAt,
+                Size:imageSizeInBytes
+              }' \
             --output table
+
+      - name: Inspect pushed image platform
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker buildx imagetools inspect "$IMAGE_URI"
+
+      - name: Verify Wiki content inside image
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker pull --platform linux/arm64 "$IMAGE_URI"
+
+          docker run \
+            --rm \
+            --platform linux/arm64 \
+            --entrypoint /bin/sh \
+            "$IMAGE_URI" \
+            -c '
+              set -eu
+
+              WIKI_DIR="/var/task/data/source-repo/wiki"
+
+              echo "Checking Lambda task root..."
+              ls -la /var/task
+
+              echo "Checking Wiki directory: ${WIKI_DIR}"
+              test -d "${WIKI_DIR}"
+
+              FILE_COUNT="$(
+                find "${WIKI_DIR}" \
+                  -type f \
+                  | wc -l
+              )"
+
+              FILE_COUNT="$(
+                printf "%s" "${FILE_COUNT}" \
+                  | tr -d "[:space:]"
+              )"
+
+              if [ "${FILE_COUNT}" -eq 0 ]; then
+                echo "Wiki directory exists but contains no files."
+                exit 1
+              fi
+
+              echo "Wiki files in image: ${FILE_COUNT}"
+
+              echo "Wiki directory tree:"
+              find "${WIKI_DIR}" \
+                -maxdepth 2 \
+                -type d \
+                -print
+
+              echo "Sample Wiki files:"
+              find "${WIKI_DIR}" \
+                -maxdepth 3 \
+                -type f \
+                | head -n 20
+            '
 
       - name: Validate final deployment configuration
         shell: bash
@@ -205,16 +327,15 @@ jobs:
           : "${GRAPH_REBUILD_SECRET_KEY:?GRAPH_REBUILD_SECRET_KEY is required}"
           : "${WIKI_RELOAD_SECRET_KEY:?WIKI_RELOAD_SECRET_KEY is required}"
 
+          EXPECTED_SUFFIX=".dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${GITHUB_SHA}"
+
           case "$IMAGE_URI" in
-            "${ECR_REPOSITORY}:${GITHUB_SHA}")
-              echo "IMAGE_URI is missing its ECR registry."
-              exit 1
-              ;;
-            *".dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${GITHUB_SHA}")
+            *"$EXPECTED_SUFFIX")
               ;;
             *)
-              echo "IMAGE_URI has an unexpected format."
+              echo "::error::IMAGE_URI has an unexpected format."
               echo "Image URI: $IMAGE_URI"
+              echo "Expected suffix: $EXPECTED_SUFFIX"
               exit 1
               ;;
           esac
@@ -228,8 +349,10 @@ jobs:
           set -euo pipefail
 
           aws cloudformation validate-template \
+            --region "$AWS_REGION" \
             --template-body file://infrastructure/lambda.yaml \
-            --query '{Description:Description,Parameters:Parameters[].ParameterKey}' \
+            --query \
+              '{Description:Description,Parameters:Parameters[].ParameterKey}' \
             --output table
 
       - name: Deploy CloudFormation stack
@@ -261,7 +384,6 @@ jobs:
             echo "::error::CloudFormation deployment failed."
             echo "Retrieving failed CloudFormation events..."
 
-            # Newer AWS CLI and CloudFormation API.
             aws cloudformation describe-events \
               --region "$AWS_REGION" \
               --stack-name "$STACK_NAME" \
@@ -279,12 +401,13 @@ jobs:
 
             echo "Retrieving traditional stack events..."
 
-            # Fallback for existing stacks and runtime provisioning errors.
             aws cloudformation describe-stack-events \
               --region "$AWS_REGION" \
               --stack-name "$STACK_NAME" \
               --query \
-                'StackEvents[?contains(ResourceStatus, `FAILED`)] | [0:20].{
+                'StackEvents[
+                  ?contains(ResourceStatus, `FAILED`)
+                ] | [0:20].{
                   Time:Timestamp,
                   Resource:LogicalResourceId,
                   Type:ResourceType,
@@ -296,6 +419,35 @@ jobs:
 
             exit "$DEPLOY_EXIT_CODE"
           fi
+
+      - name: Wait for Lambda function to become active
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          aws lambda wait function-active-v2 \
+            --region "$AWS_REGION" \
+            --function-name "$FUNCTION_NAME"
+
+          aws lambda wait function-updated-v2 \
+            --region "$AWS_REGION" \
+            --function-name "$FUNCTION_NAME"
+
+          aws lambda get-function-configuration \
+            --region "$AWS_REGION" \
+            --function-name "$FUNCTION_NAME" \
+            --query \
+              '{
+                State:State,
+                StateReason:StateReason,
+                LastUpdateStatus:LastUpdateStatus,
+                LastUpdateStatusReason:LastUpdateStatusReason,
+                Architectures:Architectures,
+                PackageType:PackageType,
+                Timeout:Timeout,
+                MemorySize:MemorySize
+              }' \
+            --output yaml
 
       - name: Read CloudFormation outputs
         id: stack-outputs
@@ -347,34 +499,50 @@ jobs:
 
           echo "Testing Lambda Function URL: $HEALTH_URL"
 
-          HTTP_STATUS="$(
-            curl \
-              --silent \
-              --show-error \
-              --location \
-              --output /tmp/lambda-response.txt \
-              --write-out '%{http_code}' \
-              --connect-timeout 15 \
-              --max-time 120 \
-              "$HEALTH_URL"
-          )"
+          # A newly deployed image can have a slow first initialization.
+          # Try up to three times before treating the deployment as failed.
+          HTTP_STATUS="000"
 
-          echo "HTTP status: $HTTP_STATUS"
+          for ATTEMPT in 1 2 3; do
+            echo "Health-check attempt: $ATTEMPT"
+
+            HTTP_STATUS="$(
+              curl \
+                --silent \
+                --show-error \
+                --location \
+                --output /tmp/lambda-response.txt \
+                --write-out '%{http_code}' \
+                --connect-timeout 15 \
+                --max-time 120 \
+                "$HEALTH_URL" \
+                || printf '000'
+            )"
+
+            echo "HTTP status: $HTTP_STATUS"
+
+            if [[ "$HTTP_STATUS" == "200" ]]; then
+              break
+            fi
+
+            if [[ "$ATTEMPT" -lt 3 ]]; then
+              sleep 10
+            fi
+          done
 
           echo "Response body:"
-          head -c 2000 /tmp/lambda-response.txt || true
+          head -c 2000 /tmp/lambda-response.txt 2>/dev/null || true
           echo
 
-          if [[ "$HTTP_STATUS" -ge 500 ]]; then
-            echo "::error::Lambda Function URL returned HTTP $HTTP_STATUS"
+          if [[ "$HTTP_STATUS" != "200" ]]; then
+            echo "::error::Lambda health endpoint returned HTTP $HTTP_STATUS"
 
-            # 给 CloudWatch 几秒钟完成日志写入。
             sleep 8
 
             echo "Recent Lambda logs:"
             aws logs tail "/aws/lambda/$FUNCTION_NAME" \
               --region "$AWS_REGION" \
-              --since 15m \
+              --since 20m \
               --format detailed \
               || true
 

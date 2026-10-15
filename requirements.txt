@@ -8,6 +8,7 @@ ipykernel
 fastapi
 # uvicorn
 langgraph
+pydantic
 pydantic-settings
 PyYAML
 pytest
