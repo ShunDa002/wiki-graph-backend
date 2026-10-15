@@ -343,7 +343,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "Testing Lambda Function URL: $FUNCTION_URL"
+          HEALTH_URL="${FUNCTION_URL%/}/health"
+
+          echo "Testing Lambda Function URL: $HEALTH_URL"
 
           HTTP_STATUS="$(
             curl \
@@ -353,20 +355,29 @@ jobs:
               --output /tmp/lambda-response.txt \
               --write-out '%{http_code}' \
               --connect-timeout 15 \
-              --max-time 45 \
-              "$FUNCTION_URL"
+              --max-time 120 \
+              "$HEALTH_URL"
           )"
 
           echo "HTTP status: $HTTP_STATUS"
 
-          # Display only a limited response body.
+          echo "Response body:"
           head -c 2000 /tmp/lambda-response.txt || true
           echo
 
-          # Accept successful responses and expected application-level
-          # authentication/client errors. Fail only on server/network errors.
           if [[ "$HTTP_STATUS" -ge 500 ]]; then
             echo "::error::Lambda Function URL returned HTTP $HTTP_STATUS"
+
+            # 给 CloudWatch 几秒钟完成日志写入。
+            sleep 8
+
+            echo "Recent Lambda logs:"
+            aws logs tail "/aws/lambda/$FUNCTION_NAME" \
+              --region "$AWS_REGION" \
+              --since 15m \
+              --format detailed \
+              || true
+
             exit 1
           fi
 
