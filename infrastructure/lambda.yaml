@@ -1,0 +1,87 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: LLM Wiki FastAPI backend on Lambda using an ECR image.
+Parameters:
+  FunctionName: {Type: String, Default: llm-wiki-api}
+  ImageUri: {Type: String}
+  OpenRouterApiKey: {Type: String, NoEcho: true}
+  OpenRouterModel: {Type: String, Default: openrouter/free}
+  FrontendOrigin: {Type: String, Default: "http://localhost:3000"}
+  GraphRebuildApiKey: {Type: String, NoEcho: true}
+  WikiReloadApiKey: {Type: String, NoEcho: true}
+  LogRetentionDays:
+    Type: Number
+    Default: 14
+    AllowedValues: [7, 14]
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  WikiApiFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref FunctionName
+      PackageType: Image
+      Code: {ImageUri: !Ref ImageUri}
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Architectures: [arm64]
+      MemorySize: 2048
+      Timeout: 120
+      EphemeralStorage: {Size: 1024}
+      Environment:
+        Variables:
+          WIKI_REPO_DIR: /var/task/data/source-repo
+          WIKI_DIR: /var/task/data/source-repo/wiki
+          GRAPH_OUTPUT_PATH: /tmp/generated/graph.json
+          GRAPH_WRITE_SNAPSHOT: "false"
+          GRAPH_CACHE_ENABLED: "true"
+          GRAPH_SOURCE_FOLDERS: '["sources","concepts","decisions","questions","syntheses","experiments","projects"]'
+          CHAT_SOURCE_FOLDERS: '["sources","concepts"]'
+          FRONTEND_ORIGINS: !Sub '["${FrontendOrigin}"]'
+          OPENROUTER_API_KEY: !Ref OpenRouterApiKey
+          OPENROUTER_MODEL: !Ref OpenRouterModel
+          GRAPH_REBUILD_API_KEY: !Ref GraphRebuildApiKey
+          WIKI_RELOAD_API_KEY: !Ref WikiReloadApiKey
+  WikiApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${FunctionName}"
+      RetentionInDays: !Ref LogRetentionDays
+  WikiApiFunctionUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt WikiApiFunction.Arn
+      AuthType: NONE
+      InvokeMode: BUFFERED
+      Cors:
+        AllowCredentials: true
+        AllowHeaders: [content-type, x-graph-api-key]
+        AllowMethods: [GET, POST]
+        AllowOrigins: [!Ref FrontendOrigin]
+        MaxAge: 300
+  PublicFunctionUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WikiApiFunction
+      Action: lambda:InvokeFunctionUrl
+      Principal: "*"
+      FunctionUrlAuthType: NONE
+  PublicFunctionInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WikiApiFunction
+      Action: lambda:InvokeFunction
+      Principal: "*"
+      InvokedViaFunctionUrl: true
+Outputs:
+  FunctionName: {Value: !Ref WikiApiFunction}
+  FunctionUrl: {Value: !GetAtt WikiApiFunctionUrl.FunctionUrl}

@@ -12,3 +12,4 @@ pydantic-settings
 PyYAML
 pytest
 httpx
+mangum>=0.19,<1

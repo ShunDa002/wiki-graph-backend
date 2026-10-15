@@ -1,9 +1,9 @@
 import logging
 from contextlib import asynccontextmanager
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
+
+# import uvicorn
 
 from chat.routes import make_chat_router
 from chat.service import ChatService
@@ -72,5 +72,5 @@ def health() -> dict:
     }
 
 
-if __name__ == "__main__":
-    uvicorn.run("app:app", host="127.0.0.1", port=8001, reload=True, log_level="debug")
+# if __name__ == "__main__":
+#     uvicorn.run("app:app", host="0.0.0.0", port=8080, reload=True, log_level="debug")
