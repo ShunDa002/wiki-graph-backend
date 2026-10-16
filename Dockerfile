@@ -10,7 +10,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     GRAPH_OUTPUT_PATH=/tmp/generated/graph.json \
     GRAPH_WRITE_SNAPSHOT=false
 
-# Install dependencies separately to preserve Docker layer caching.
 COPY requirements.txt ${LAMBDA_TASK_ROOT}/requirements.txt
 
 RUN python -m pip install --upgrade pip \
@@ -20,31 +19,38 @@ RUN python -m pip install --upgrade pip \
         --target ${LAMBDA_TASK_ROOT} \
     && rm -rf /root/.cache/pip
 
-# Copy application code and bundled Wiki content.
 COPY . ${LAMBDA_TASK_ROOT}
 
-# Validate the application and bundled Wiki without relying on
-# optional Linux utilities such as find/findutils.
 RUN set -eux; \
     test -f "${LAMBDA_TASK_ROOT}/lambda_handler.py"; \
     test -f "${LAMBDA_TASK_ROOT}/app.py"; \
     test -d "${WIKI_REPO_DIR}"; \
     test -d "${WIKI_DIR}"; \
-    WIKI_FILE_COUNT="$( \
-        python -c ' \
-from pathlib import Path; \
-import os; \
-wiki_dir = Path(os.environ["WIKI_DIR"]); \
-print(sum( \
-    1 for path in wiki_dir.rglob("*") \
-    if path.is_file() \
-    and path.suffix.lower() in {".md", ".markdown"} \
-))' \
-    )"; \
-    test "${WIKI_FILE_COUNT}" -gt 0; \
-    echo "Verified Wiki directory: ${WIKI_DIR}"; \
-    echo "Markdown Wiki file count: ${WIKI_FILE_COUNT}"; \
     mkdir -p /tmp/generated
+
+RUN python <<'PY'
+import os
+import sys
+from pathlib import Path
+
+wiki_dir = Path(os.environ["WIKI_DIR"])
+wiki_files = sorted(
+    path
+    for path in wiki_dir.rglob("*")
+    if path.is_file() and path.suffix.lower() in {".md", ".markdown"}
+)
+
+print(f"Verified Wiki directory: {wiki_dir}")
+print(f"Markdown Wiki file count: {len(wiki_files)}")
+
+if not wiki_files:
+    print(f"ERROR: No Markdown Wiki files found under: {wiki_dir}", file=sys.stderr)
+    raise SystemExit(1)
+
+print("Sample Wiki files:")
+for path in wiki_files[:20]:
+    print(path.relative_to(wiki_dir))
+PY
 
 EXPOSE 8080
 

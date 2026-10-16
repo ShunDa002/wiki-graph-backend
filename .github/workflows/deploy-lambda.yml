@@ -21,6 +21,7 @@ env:
   FUNCTION_NAME: ${{ vars.LAMBDA_FUNCTION_NAME }}
   FRONTEND_ORIGIN: ${{ vars.FRONTEND_ORIGIN }}
   OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
+  WIKI_REPO_DIR: data/source-repo
   WIKI_SOURCE: data/source-repo/wiki
 
 jobs:
@@ -49,7 +50,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
@@ -58,43 +58,32 @@ jobs:
         run: |
           set -euo pipefail
 
+          : "${WIKI_REPO_DIR:?WIKI_REPO_DIR is required}"
           : "${WIKI_SOURCE:?WIKI_SOURCE is required}"
+
+          if [[ ! -d "$WIKI_REPO_DIR" ]]; then
+            echo "::error::Bundled Wiki repository directory does not exist: $WIKI_REPO_DIR"
+            exit 1
+          fi
 
           if [[ ! -d "$WIKI_SOURCE" ]]; then
             echo "::error::Bundled Wiki directory does not exist: $WIKI_SOURCE"
-
             echo "Tracked files under data/:"
             git ls-files data || true
-
             echo "Available directories:"
             find . \
               -maxdepth 5 \
               -type d \
+              -not -path './.git' \
               -not -path './.git/*' \
               -print \
               | sort
-
             exit 1
           fi
 
-          MARKDOWN_FILE_COUNT="$(
-            python - <<'PY'
-          import os
-          from pathlib import Path
-
-          wiki_dir = Path(os.environ["WIKI_SOURCE"])
-          count = sum(
-              1
-              for path in wiki_dir.rglob("*")
-              if path.is_file()
-              and path.suffix.lower() in {".md", ".markdown"}
-          )
-          print(count)
-          PY
-          )"
-
-          if [[ "$MARKDOWN_FILE_COUNT" -eq 0 ]]; then
-            echo "::error::No Markdown Wiki files found under: $WIKI_SOURCE"
+          if find "$WIKI_REPO_DIR" -name .git -print -quit | grep -q .; then
+            echo "::error::Nested .git metadata exists inside the bundled Wiki source."
+            find "$WIKI_REPO_DIR" -name .git -print
             exit 1
           fi
 
@@ -102,38 +91,36 @@ jobs:
           TRACKED_WIKI_FILE_COUNT="${TRACKED_WIKI_FILE_COUNT//[[:space:]]/}"
 
           if [[ "$TRACKED_WIKI_FILE_COUNT" -eq 0 ]]; then
-            echo "::error::Wiki exists in the runner but is not tracked by Git."
-            echo "Check .gitignore and remove any nested .git directory."
+            echo "::error::Wiki exists but is not tracked by Git."
+            echo "Check .gitignore and remove nested .git metadata."
             exit 1
           fi
 
-          if find "$WIKI_SOURCE" -name .git -print -quit | grep -q .; then
-            echo "::error::Nested .git metadata exists inside the bundled Wiki."
-            find "$WIKI_SOURCE" -name .git -print
-            exit 1
-          fi
-
-          echo "Wiki source: $WIKI_SOURCE"
-          echo "Tracked Wiki files: $TRACKED_WIKI_FILE_COUNT"
-          echo "Markdown Wiki files: $MARKDOWN_FILE_COUNT"
-          echo "Wiki size:"
-          du -sh "$WIKI_SOURCE"
-
-          echo "Sample Wiki files:"
           python - <<'PY'
           import os
+          import sys
           from pathlib import Path
 
           wiki_dir = Path(os.environ["WIKI_SOURCE"])
           files = sorted(
               path
               for path in wiki_dir.rglob("*")
-              if path.is_file()
-              and path.suffix.lower() in {".md", ".markdown"}
+              if path.is_file() and path.suffix.lower() in {".md", ".markdown"}
           )
+
+          print(f"Wiki source: {wiki_dir}")
+          print(f"Markdown Wiki files: {len(files)}")
+          if not files:
+              print(f"No Markdown Wiki files found under: {wiki_dir}", file=sys.stderr)
+              raise SystemExit(1)
+
+          print("Sample Wiki files:")
           for path in files[:20]:
               print(path)
           PY
+
+          echo "Tracked Wiki files: $TRACKED_WIKI_FILE_COUNT"
+          du -sh "$WIKI_SOURCE"
 
       - name: Run tests
         shell: bash
@@ -155,7 +142,7 @@ jobs:
           set -euo pipefail
           aws sts get-caller-identity
 
-      - name: Validate base deployment configuration
+      - name: Validate deployment configuration
         shell: bash
         run: |
           set -euo pipefail
@@ -177,16 +164,14 @@ jobs:
           esac
 
           case "$ECR_REPOSITORY" in
-            *://*|*.amazonaws.com/*)
-              echo "::error::ECR_REPOSITORY must contain only the repository name."
-              echo "Example: wiki-graph-backend"
+            *://*|*.amazonaws.com/*|"")
+              echo "::error::ECR_REPOSITORY must contain only a repository name."
               exit 1
               ;;
           esac
 
           case "$FRONTEND_ORIGIN" in
-            http://*|https://*)
-              ;;
+            http://*|https://*) ;;
             *)
               echo "::error::FRONTEND_ORIGIN must start with http:// or https://"
               exit 1
@@ -196,23 +181,11 @@ jobs:
           FRONTEND_WITHOUT_SCHEME="${FRONTEND_ORIGIN#http://}"
           FRONTEND_WITHOUT_SCHEME="${FRONTEND_WITHOUT_SCHEME#https://}"
 
-          if [[ -z "$FRONTEND_WITHOUT_SCHEME" ]]; then
-            echo "::error::FRONTEND_ORIGIN does not contain a host."
-            exit 1
-          fi
-
-          if [[ "$FRONTEND_WITHOUT_SCHEME" == */* ]]; then
-            echo "::error::FRONTEND_ORIGIN must not contain a path or trailing slash."
+          if [[ -z "$FRONTEND_WITHOUT_SCHEME" || "$FRONTEND_WITHOUT_SCHEME" == */* ]]; then
+            echo "::error::FRONTEND_ORIGIN must be an origin without a path or trailing slash."
             echo "Use: https://example.com"
-            echo "Not: https://example.com/path"
             exit 1
           fi
-
-          echo "AWS region: $AWS_REGION"
-          echo "ECR repository: $ECR_REPOSITORY"
-          echo "CloudFormation stack: $STACK_NAME"
-          echo "Lambda function: $FUNCTION_NAME"
-          echo "Frontend origin: $FRONTEND_ORIGIN"
 
       - name: Ensure ECR repository exists
         shell: bash
@@ -226,15 +199,12 @@ jobs:
           then
             echo "ECR repository already exists: $ECR_REPOSITORY"
           else
-            echo "ECR repository was not found. Creating: $ECR_REPOSITORY"
-
             aws ecr create-repository \
               --region "$AWS_REGION" \
               --repository-name "$ECR_REPOSITORY" \
               --image-scanning-configuration scanOnPush=true \
               --image-tag-mutability IMMUTABLE \
               >/dev/null
-
             echo "Created ECR repository: $ECR_REPOSITORY"
           fi
 
@@ -248,11 +218,8 @@ jobs:
           ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
           set -euo pipefail
-
           : "${ECR_REGISTRY:?ECR registry output is required}"
-
           IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${GITHUB_SHA}"
-
           echo "IMAGE_URI=$IMAGE_URI" >> "$GITHUB_ENV"
           echo "Deployment image: $IMAGE_URI"
 
@@ -276,30 +243,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           aws ecr describe-images \
             --region "$AWS_REGION" \
             --repository-name "$ECR_REPOSITORY" \
             --image-ids imageTag="$GITHUB_SHA" \
-            --query \
-              'imageDetails[0].{
-                Digest:imageDigest,
-                PushedAt:imagePushedAt,
-                Size:imageSizeInBytes
-              }' \
+            --query 'imageDetails[0].{Digest:imageDigest,PushedAt:imagePushedAt,Size:imageSizeInBytes}' \
             --output table
 
       - name: Inspect pushed image platform
         shell: bash
         run: |
           set -euo pipefail
-
           INSPECTION="$(docker buildx imagetools inspect "$IMAGE_URI")"
           printf '%s\n' "$INSPECTION"
-
-          if ! grep -Eq 'Platform:[[:space:]]+linux/arm64|linux/arm64' \
-            <<< "$INSPECTION"
-          then
+          if ! grep -Eq 'Platform:[[:space:]]+linux/arm64|linux/arm64' <<< "$INSPECTION"; then
             echo "::error::Pushed image does not advertise linux/arm64."
             exit 1
           fi
@@ -310,7 +267,6 @@ jobs:
           set -euo pipefail
 
           docker pull --platform linux/arm64 "$IMAGE_URI"
-
           docker run \
             --rm \
             --platform linux/arm64 \
@@ -321,78 +277,36 @@ jobs:
           from pathlib import Path
 
           wiki_dir = Path("/var/task/data/source-repo/wiki")
-
-          if not wiki_dir.is_dir():
-              print(
-                  f"Wiki directory does not exist: {wiki_dir}",
-                  file=sys.stderr,
-              )
-              raise SystemExit(1)
-
-          wiki_files = sorted(
+          files = sorted(
               path
               for path in wiki_dir.rglob("*")
-              if path.is_file()
-              and path.suffix.lower() in {".md", ".markdown"}
-          )
-
-          if not wiki_files:
-              print(
-                  f"No Markdown Wiki files found under: {wiki_dir}",
-                  file=sys.stderr,
-              )
-              raise SystemExit(1)
+              if path.is_file() and path.suffix.lower() in {".md", ".markdown"}
+          ) if wiki_dir.is_dir() else []
 
           print(f"Verified Wiki directory: {wiki_dir}")
-          print(f"Markdown Wiki files in image: {len(wiki_files)}")
-          print("Sample Wiki files:")
+          print(f"Markdown Wiki files in image: {len(files)}")
 
-          for path in wiki_files[:20]:
+          if not files:
+              print(f"No Markdown Wiki files found under: {wiki_dir}", file=sys.stderr)
+              raise SystemExit(1)
+
+          print("Sample Wiki files:")
+          for path in files[:20]:
               print(path.relative_to(wiki_dir))
           '
-
-      - name: Validate final deployment configuration
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          : "${IMAGE_URI:?IMAGE_URI is required}"
-          : "${OPENROUTER_API_KEY:?OPENROUTER_API_KEY is required}"
-          : "${GRAPH_REBUILD_SECRET_KEY:?GRAPH_REBUILD_SECRET_KEY is required}"
-          : "${WIKI_RELOAD_SECRET_KEY:?WIKI_RELOAD_SECRET_KEY is required}"
-
-          EXPECTED_SUFFIX=".dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${GITHUB_SHA}"
-
-          case "$IMAGE_URI" in
-            *"$EXPECTED_SUFFIX")
-              ;;
-            *)
-              echo "::error::IMAGE_URI has an unexpected format."
-              echo "Image URI: $IMAGE_URI"
-              echo "Expected suffix: $EXPECTED_SUFFIX"
-              exit 1
-              ;;
-          esac
-
-          echo "Deployment configuration is valid."
-          echo "Image URI: $IMAGE_URI"
 
       - name: Validate CloudFormation template syntax
         shell: bash
         run: |
           set -euo pipefail
-
           test -f infrastructure/lambda.yaml
-
           aws cloudformation validate-template \
             --region "$AWS_REGION" \
             --template-body file://infrastructure/lambda.yaml \
-            --query \
-              '{Description:Description,Parameters:Parameters[].ParameterKey}' \
+            --query '{Description:Description,Parameters:Parameters[].ParameterKey}' \
             --output table
 
       - name: Deploy CloudFormation stack
-        id: deploy
         shell: bash
         run: |
           set -uo pipefail
@@ -416,26 +330,13 @@ jobs:
             echo "CloudFormation deployment completed successfully."
           else
             DEPLOY_EXIT_CODE=$?
-
             echo "::error::CloudFormation deployment failed."
-            echo "Retrieving failed stack events..."
-
             aws cloudformation describe-stack-events \
               --region "$AWS_REGION" \
               --stack-name "$STACK_NAME" \
-              --query \
-                'StackEvents[
-                  ?contains(ResourceStatus, `FAILED`)
-                ] | [0:20].{
-                  Time:Timestamp,
-                  Resource:LogicalResourceId,
-                  Type:ResourceType,
-                  Status:ResourceStatus,
-                  Message:ResourceStatusReason
-                }' \
+              --query 'StackEvents[?contains(ResourceStatus, `FAILED`)] | [0:20].{Time:Timestamp,Resource:LogicalResourceId,Type:ResourceType,Status:ResourceStatus,Message:ResourceStatusReason}' \
               --output table \
               || true
-
             exit "$DEPLOY_EXIT_CODE"
           fi
 
@@ -443,29 +344,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           aws lambda wait function-active-v2 \
             --region "$AWS_REGION" \
             --function-name "$FUNCTION_NAME"
-
           aws lambda wait function-updated-v2 \
             --region "$AWS_REGION" \
             --function-name "$FUNCTION_NAME"
-
           aws lambda get-function-configuration \
             --region "$AWS_REGION" \
             --function-name "$FUNCTION_NAME" \
-            --query \
-              '{
-                State:State,
-                StateReason:StateReason,
-                LastUpdateStatus:LastUpdateStatus,
-                LastUpdateStatusReason:LastUpdateStatusReason,
-                Architectures:Architectures,
-                PackageType:PackageType,
-                Timeout:Timeout,
-                MemorySize:MemorySize
-              }' \
+            --query '{State:State,StateReason:StateReason,LastUpdateStatus:LastUpdateStatus,LastUpdateStatusReason:LastUpdateStatusReason,Architectures:Architectures,PackageType:PackageType,Timeout:Timeout,MemorySize:MemorySize}' \
             --output yaml
 
       - name: Read CloudFormation outputs
@@ -474,32 +362,24 @@ jobs:
         run: |
           set -euo pipefail
 
-          FUNCTION_URL="$(
-            aws cloudformation describe-stacks \
-              --region "$AWS_REGION" \
-              --stack-name "$STACK_NAME" \
-              --query \
-                "Stacks[0].Outputs[?OutputKey=='FunctionUrl'].OutputValue | [0]" \
-              --output text
-          )"
+          FUNCTION_URL="$(aws cloudformation describe-stacks \
+            --region "$AWS_REGION" \
+            --stack-name "$STACK_NAME" \
+            --query "Stacks[0].Outputs[?OutputKey=='FunctionUrl'].OutputValue | [0]" \
+            --output text)"
 
-          DEPLOYED_FUNCTION_NAME="$(
-            aws cloudformation describe-stacks \
-              --region "$AWS_REGION" \
-              --stack-name "$STACK_NAME" \
-              --query \
-                "Stacks[0].Outputs[?OutputKey=='FunctionName'].OutputValue | [0]" \
-              --output text
-          )"
+          DEPLOYED_FUNCTION_NAME="$(aws cloudformation describe-stacks \
+            --region "$AWS_REGION" \
+            --stack-name "$STACK_NAME" \
+            --query "Stacks[0].Outputs[?OutputKey=='FunctionName'].OutputValue | [0]" \
+            --output text)"
 
           if [[ -z "$FUNCTION_URL" || "$FUNCTION_URL" == "None" ]]; then
             echo "::error::FunctionUrl was not found in CloudFormation outputs."
             exit 1
           fi
 
-          if [[ -z "$DEPLOYED_FUNCTION_NAME" ||
-                "$DEPLOYED_FUNCTION_NAME" == "None" ]]
-          then
+          if [[ -z "$DEPLOYED_FUNCTION_NAME" || "$DEPLOYED_FUNCTION_NAME" == "None" ]]; then
             echo "::error::FunctionName was not found in CloudFormation outputs."
             exit 1
           fi
@@ -516,31 +396,22 @@ jobs:
 
           HEALTH_URL="${FUNCTION_URL%/}/health"
           RESPONSE_FILE="/tmp/lambda-response.txt"
-
-          echo "Testing Lambda Function URL: $HEALTH_URL"
-
           HTTP_STATUS="000"
 
           for ATTEMPT in 1 2 3; do
             echo "Health-check attempt: $ATTEMPT"
-
             rm -f "$RESPONSE_FILE"
-
-            HTTP_STATUS="$(
-              curl \
-                --silent \
-                --show-error \
-                --location \
-                --output "$RESPONSE_FILE" \
-                --write-out '%{http_code}' \
-                --connect-timeout 15 \
-                --max-time 120 \
-                "$HEALTH_URL" \
-                || printf '000'
-            )"
-
+            HTTP_STATUS="$(curl \
+              --silent \
+              --show-error \
+              --location \
+              --output "$RESPONSE_FILE" \
+              --write-out '%{http_code}' \
+              --connect-timeout 15 \
+              --max-time 120 \
+              "$HEALTH_URL" \
+              || printf '000')"
             echo "HTTP status: $HTTP_STATUS"
-
             if [[ "$HTTP_STATUS" == "200" ]]; then
               break
             fi
@@ -556,16 +427,11 @@ jobs:
 
           if [[ "$HTTP_STATUS" != "200" ]]; then
             echo "::error::Lambda health endpoint returned HTTP $HTTP_STATUS"
-
-            sleep 8
-
-            echo "Recent Lambda logs:"
             aws logs tail "/aws/lambda/$FUNCTION_NAME" \
               --region "$AWS_REGION" \
               --since 20m \
               --format detailed \
               || true
-
             exit 1
           fi
 
@@ -577,7 +443,6 @@ jobs:
           DEPLOYED_FUNCTION_NAME: ${{ steps.stack-outputs.outputs.function_name }}
         run: |
           set -euo pipefail
-
           {
             echo "### Lambda deployment"
             echo
@@ -591,5 +456,3 @@ jobs:
             echo "- Function URL: $FUNCTION_URL"
             echo "- Wiki source: bundled in backend repository"
           } >> "$GITHUB_STEP_SUMMARY"
-
-          echo "Lambda Function URL: $FUNCTION_URL"
