@@ -78,40 +78,28 @@ jobs:
           fi
 
           MARKDOWN_FILE_COUNT="$(
-            find "$WIKI_SOURCE" \
-              -type f \
-              \( -iname '*.md' -o -iname '*.markdown' \) \
-              -print \
-              | wc -l
-          )"
+            python - <<'PY'
+          import os
+          from pathlib import Path
 
-          MARKDOWN_FILE_COUNT="$(
-            printf '%s' "$MARKDOWN_FILE_COUNT" \
-              | tr -d '[:space:]'
+          wiki_dir = Path(os.environ["WIKI_SOURCE"])
+          count = sum(
+              1
+              for path in wiki_dir.rglob("*")
+              if path.is_file()
+              and path.suffix.lower() in {".md", ".markdown"}
+          )
+          print(count)
+          PY
           )"
 
           if [[ "$MARKDOWN_FILE_COUNT" -eq 0 ]]; then
             echo "::error::No Markdown Wiki files found under: $WIKI_SOURCE"
-
-            find "$WIKI_SOURCE" \
-              -maxdepth 3 \
-              -type f \
-              -print \
-              | sort \
-              | head -n 50
-
             exit 1
           fi
 
-          TRACKED_WIKI_FILE_COUNT="$(
-            git ls-files "$WIKI_SOURCE" \
-              | wc -l
-          )"
-
-          TRACKED_WIKI_FILE_COUNT="$(
-            printf '%s' "$TRACKED_WIKI_FILE_COUNT" \
-              | tr -d '[:space:]'
-          )"
+          TRACKED_WIKI_FILE_COUNT="$(git ls-files "$WIKI_SOURCE" | wc -l)"
+          TRACKED_WIKI_FILE_COUNT="${TRACKED_WIKI_FILE_COUNT//[[:space:]]/}"
 
           if [[ "$TRACKED_WIKI_FILE_COUNT" -eq 0 ]]; then
             echo "::error::Wiki exists in the runner but is not tracked by Git."
@@ -132,13 +120,20 @@ jobs:
           du -sh "$WIKI_SOURCE"
 
           echo "Sample Wiki files:"
-          find "$WIKI_SOURCE" \
-            -maxdepth 3 \
-            -type f \
-            \( -iname '*.md' -o -iname '*.markdown' \) \
-            -print \
-            | sort \
-            | head -n 20
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          wiki_dir = Path(os.environ["WIKI_SOURCE"])
+          files = sorted(
+              path
+              for path in wiki_dir.rglob("*")
+              if path.is_file()
+              and path.suffix.lower() in {".md", ".markdown"}
+          )
+          for path in files[:20]:
+              print(path)
+          PY
 
       - name: Run tests
         shell: bash
@@ -299,10 +294,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          INSPECTION="$(
-            docker buildx imagetools inspect "$IMAGE_URI"
-          )"
-
+          INSPECTION="$(docker buildx imagetools inspect "$IMAGE_URI")"
           printf '%s\n' "$INSPECTION"
 
           if ! grep -Eq 'Platform:[[:space:]]+linux/arm64|linux/arm64' \
@@ -322,48 +314,42 @@ jobs:
           docker run \
             --rm \
             --platform linux/arm64 \
-            --entrypoint /bin/sh \
+            --entrypoint python \
             "$IMAGE_URI" \
             -c '
-              set -eu
+          import sys
+          from pathlib import Path
 
-              WIKI_DIR="/var/task/data/source-repo/wiki"
+          wiki_dir = Path("/var/task/data/source-repo/wiki")
 
-              echo "Checking Lambda task root:"
-              ls -la /var/task
+          if not wiki_dir.is_dir():
+              print(
+                  f"Wiki directory does not exist: {wiki_dir}",
+                  file=sys.stderr,
+              )
+              raise SystemExit(1)
 
-              echo "Checking Wiki directory: ${WIKI_DIR}"
-              test -d "${WIKI_DIR}"
+          wiki_files = sorted(
+              path
+              for path in wiki_dir.rglob("*")
+              if path.is_file()
+              and path.suffix.lower() in {".md", ".markdown"}
+          )
 
-              FILE_COUNT="$(
-                find "${WIKI_DIR}" \
-                  -type f \
-                  \( -iname "*.md" -o -iname "*.markdown" \) \
-                  -print \
-                  | wc -l
-              )"
+          if not wiki_files:
+              print(
+                  f"No Markdown Wiki files found under: {wiki_dir}",
+                  file=sys.stderr,
+              )
+              raise SystemExit(1)
 
-              FILE_COUNT="$(
-                printf "%s" "${FILE_COUNT}" \
-                  | tr -d "[:space:]"
-              )"
+          print(f"Verified Wiki directory: {wiki_dir}")
+          print(f"Markdown Wiki files in image: {len(wiki_files)}")
+          print("Sample Wiki files:")
 
-              if [ "${FILE_COUNT}" -eq 0 ]; then
-                echo "Wiki directory contains no Markdown files."
-                exit 1
-              fi
-
-              echo "Markdown Wiki files in image: ${FILE_COUNT}"
-
-              echo "Sample Wiki files:"
-              find "${WIKI_DIR}" \
-                -maxdepth 3 \
-                -type f \
-                \( -iname "*.md" -o -iname "*.markdown" \) \
-                -print \
-                | sort \
-                | head -n 20
-            '
+          for path in wiki_files[:20]:
+              print(path.relative_to(wiki_dir))
+          '
 
       - name: Validate final deployment configuration
         shell: bash

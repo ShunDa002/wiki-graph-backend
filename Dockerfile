@@ -20,29 +20,32 @@ RUN python -m pip install --upgrade pip \
         --target ${LAMBDA_TASK_ROOT} \
     && rm -rf /root/.cache/pip
 
-# Copy application code and the Wiki bundled in this repository.
+# Copy application code and bundled Wiki content.
 COPY . ${LAMBDA_TASK_ROOT}
 
-# Validate all required runtime files during image construction.
+# Validate the application and bundled Wiki without relying on
+# optional Linux utilities such as find/findutils.
 RUN set -eux; \
     test -f "${LAMBDA_TASK_ROOT}/lambda_handler.py"; \
     test -f "${LAMBDA_TASK_ROOT}/app.py"; \
     test -d "${WIKI_REPO_DIR}"; \
     test -d "${WIKI_DIR}"; \
     WIKI_FILE_COUNT="$( \
-        find "${WIKI_DIR}" \
-            -type f \
-            \( -iname '*.md' -o -iname '*.markdown' \) \
-            -print \
-        | wc -l \
-        | tr -d '[:space:]' \
+        python -c ' \
+from pathlib import Path; \
+import os; \
+wiki_dir = Path(os.environ["WIKI_DIR"]); \
+print(sum( \
+    1 for path in wiki_dir.rglob("*") \
+    if path.is_file() \
+    and path.suffix.lower() in {".md", ".markdown"} \
+))' \
     )"; \
     test "${WIKI_FILE_COUNT}" -gt 0; \
     echo "Verified Wiki directory: ${WIKI_DIR}"; \
     echo "Markdown Wiki file count: ${WIKI_FILE_COUNT}"; \
     mkdir -p /tmp/generated
 
-# Used by the Lambda Runtime Interface Emulator during local execution.
 EXPOSE 8080
 
 CMD ["lambda_handler.handler"]
