@@ -1,18 +1,32 @@
 .git
 .github
-.pytest_cache
-__pycache__
+.pytest*cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+**pycache**
 *.py[cod]
 .env
-.env.*
+.env.\_
 !.env.example
 .venv
 venv
 tests
 infrastructure
-*.zip
-data/generated
+\*.zip
 
 fastapi_graph_view_backend_implementation_plan.md
 app-streamlit.py
 sync_wiki.py
+data/generated
+README.md
+
+# Development documentation not needed by Lambda
+
+data/source-repo/README.md
+data/source-repo/AGENTS.md
+data/source-repo/CLAUDE.md
+data/source-repo/GEMINI.md
+data/source-repo/LLM-Wiki-and-OKF-Implementation-Plan.md
+data/source-repo/WORKFLOW_REFERENCE.md

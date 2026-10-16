@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: production-lambda
+  group: production-lambda-${{ vars.LAMBDA_STACK_NAME }}
   cancel-in-progress: false
 
 env:
@@ -21,6 +21,7 @@ env:
   FUNCTION_NAME: ${{ vars.LAMBDA_FUNCTION_NAME }}
   FRONTEND_ORIGIN: ${{ vars.FRONTEND_ORIGIN }}
   OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
+  WIKI_SOURCE: data/source-repo/wiki
 
 jobs:
   deploy:
@@ -34,22 +35,8 @@ jobs:
       WIKI_RELOAD_SECRET_KEY: ${{ secrets.WIKI_RELOAD_SECRET_KEY }}
 
     steps:
-      - name: Check out repository
+      - name: Check out backend repository
         uses: actions/checkout@v5
-        with:
-          submodules: recursive
-
-      - name: Show repository and submodule status
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "Git commit: $GITHUB_SHA"
-          echo "Repository root:"
-          pwd
-
-          echo "Submodule status:"
-          git submodule status --recursive || true
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -65,6 +52,93 @@ jobs:
 
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
+
+      - name: Verify bundled Wiki source
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          : "${WIKI_SOURCE:?WIKI_SOURCE is required}"
+
+          if [[ ! -d "$WIKI_SOURCE" ]]; then
+            echo "::error::Bundled Wiki directory does not exist: $WIKI_SOURCE"
+
+            echo "Tracked files under data/:"
+            git ls-files data || true
+
+            echo "Available directories:"
+            find . \
+              -maxdepth 5 \
+              -type d \
+              -not -path './.git/*' \
+              -print \
+              | sort
+
+            exit 1
+          fi
+
+          MARKDOWN_FILE_COUNT="$(
+            find "$WIKI_SOURCE" \
+              -type f \
+              \( -iname '*.md' -o -iname '*.markdown' \) \
+              -print \
+              | wc -l
+          )"
+
+          MARKDOWN_FILE_COUNT="$(
+            printf '%s' "$MARKDOWN_FILE_COUNT" \
+              | tr -d '[:space:]'
+          )"
+
+          if [[ "$MARKDOWN_FILE_COUNT" -eq 0 ]]; then
+            echo "::error::No Markdown Wiki files found under: $WIKI_SOURCE"
+
+            find "$WIKI_SOURCE" \
+              -maxdepth 3 \
+              -type f \
+              -print \
+              | sort \
+              | head -n 50
+
+            exit 1
+          fi
+
+          TRACKED_WIKI_FILE_COUNT="$(
+            git ls-files "$WIKI_SOURCE" \
+              | wc -l
+          )"
+
+          TRACKED_WIKI_FILE_COUNT="$(
+            printf '%s' "$TRACKED_WIKI_FILE_COUNT" \
+              | tr -d '[:space:]'
+          )"
+
+          if [[ "$TRACKED_WIKI_FILE_COUNT" -eq 0 ]]; then
+            echo "::error::Wiki exists in the runner but is not tracked by Git."
+            echo "Check .gitignore and remove any nested .git directory."
+            exit 1
+          fi
+
+          if find "$WIKI_SOURCE" -name .git -print -quit | grep -q .; then
+            echo "::error::Nested .git metadata exists inside the bundled Wiki."
+            find "$WIKI_SOURCE" -name .git -print
+            exit 1
+          fi
+
+          echo "Wiki source: $WIKI_SOURCE"
+          echo "Tracked Wiki files: $TRACKED_WIKI_FILE_COUNT"
+          echo "Markdown Wiki files: $MARKDOWN_FILE_COUNT"
+          echo "Wiki size:"
+          du -sh "$WIKI_SOURCE"
+
+          echo "Sample Wiki files:"
+          find "$WIKI_SOURCE" \
+            -maxdepth 3 \
+            -type f \
+            \( -iname '*.md' -o -iname '*.markdown' \) \
+            -print \
+            | sort \
+            | head -n 20
 
       - name: Run tests
         shell: bash
@@ -127,6 +201,11 @@ jobs:
           FRONTEND_WITHOUT_SCHEME="${FRONTEND_ORIGIN#http://}"
           FRONTEND_WITHOUT_SCHEME="${FRONTEND_WITHOUT_SCHEME#https://}"
 
+          if [[ -z "$FRONTEND_WITHOUT_SCHEME" ]]; then
+            echo "::error::FRONTEND_ORIGIN does not contain a host."
+            exit 1
+          fi
+
           if [[ "$FRONTEND_WITHOUT_SCHEME" == */* ]]; then
             echo "::error::FRONTEND_ORIGIN must not contain a path or trailing slash."
             echo "Use: https://example.com"
@@ -140,48 +219,6 @@ jobs:
           echo "Lambda function: $FUNCTION_NAME"
           echo "Frontend origin: $FRONTEND_ORIGIN"
 
-      - name: Verify Wiki source exists
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          WIKI_SOURCE="data/source-repo/wiki"
-
-          if [[ ! -d "$WIKI_SOURCE" ]]; then
-            echo "::error::Wiki source directory does not exist: $WIKI_SOURCE"
-
-            echo "Available directories:"
-            find . \
-              -maxdepth 5 \
-              -type d \
-              -not -path './.git/*' \
-              -print
-
-            exit 1
-          fi
-
-          FILE_COUNT="$(
-            find "$WIKI_SOURCE" \
-              -type f \
-              | wc -l
-          )"
-
-          FILE_COUNT="${FILE_COUNT//[[:space:]]/}"
-
-          if [[ "$FILE_COUNT" -eq 0 ]]; then
-            echo "::error::Wiki source directory is empty: $WIKI_SOURCE"
-            exit 1
-          fi
-
-          echo "Wiki source directory: $WIKI_SOURCE"
-          echo "Wiki file count: $FILE_COUNT"
-
-          echo "Sample Wiki files:"
-          find "$WIKI_SOURCE" \
-            -maxdepth 3 \
-            -type f \
-            | head -n 20
-
       - name: Ensure ECR repository exists
         shell: bash
         run: |
@@ -194,7 +231,7 @@ jobs:
           then
             echo "ECR repository already exists: $ECR_REPOSITORY"
           else
-            echo "Creating ECR repository: $ECR_REPOSITORY"
+            echo "ECR repository was not found. Creating: $ECR_REPOSITORY"
 
             aws ecr create-repository \
               --region "$AWS_REGION" \
@@ -234,6 +271,7 @@ jobs:
           file: ./Dockerfile
           platforms: linux/arm64
           push: true
+          pull: true
           provenance: false
           tags: ${{ env.IMAGE_URI }}
           cache-from: type=gha
@@ -261,7 +299,18 @@ jobs:
         run: |
           set -euo pipefail
 
-          docker buildx imagetools inspect "$IMAGE_URI"
+          INSPECTION="$(
+            docker buildx imagetools inspect "$IMAGE_URI"
+          )"
+
+          printf '%s\n' "$INSPECTION"
+
+          if ! grep -Eq 'Platform:[[:space:]]+linux/arm64|linux/arm64' \
+            <<< "$INSPECTION"
+          then
+            echo "::error::Pushed image does not advertise linux/arm64."
+            exit 1
+          fi
 
       - name: Verify Wiki content inside image
         shell: bash
@@ -280,7 +329,7 @@ jobs:
 
               WIKI_DIR="/var/task/data/source-repo/wiki"
 
-              echo "Checking Lambda task root..."
+              echo "Checking Lambda task root:"
               ls -la /var/task
 
               echo "Checking Wiki directory: ${WIKI_DIR}"
@@ -289,6 +338,8 @@ jobs:
               FILE_COUNT="$(
                 find "${WIKI_DIR}" \
                   -type f \
+                  \( -iname "*.md" -o -iname "*.markdown" \) \
+                  -print \
                   | wc -l
               )"
 
@@ -298,22 +349,19 @@ jobs:
               )"
 
               if [ "${FILE_COUNT}" -eq 0 ]; then
-                echo "Wiki directory exists but contains no files."
+                echo "Wiki directory contains no Markdown files."
                 exit 1
               fi
 
-              echo "Wiki files in image: ${FILE_COUNT}"
-
-              echo "Wiki directory tree:"
-              find "${WIKI_DIR}" \
-                -maxdepth 2 \
-                -type d \
-                -print
+              echo "Markdown Wiki files in image: ${FILE_COUNT}"
 
               echo "Sample Wiki files:"
               find "${WIKI_DIR}" \
                 -maxdepth 3 \
                 -type f \
+                \( -iname "*.md" -o -iname "*.markdown" \) \
+                -print \
+                | sort \
                 | head -n 20
             '
 
@@ -347,6 +395,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          test -f infrastructure/lambda.yaml
 
           aws cloudformation validate-template \
             --region "$AWS_REGION" \
@@ -382,24 +432,7 @@ jobs:
             DEPLOY_EXIT_CODE=$?
 
             echo "::error::CloudFormation deployment failed."
-            echo "Retrieving failed CloudFormation events..."
-
-            aws cloudformation describe-events \
-              --region "$AWS_REGION" \
-              --stack-name "$STACK_NAME" \
-              --filters FailedEvents=true \
-              --query \
-                'OperationEvents[].{
-                  Time:Timestamp,
-                  Resource:LogicalResourceId,
-                  Type:ResourceType,
-                  Status:ResourceStatus,
-                  Message:StatusReason
-                }' \
-              --output table \
-              || true
-
-            echo "Retrieving traditional stack events..."
+            echo "Retrieving failed stack events..."
 
             aws cloudformation describe-stack-events \
               --region "$AWS_REGION" \
@@ -496,22 +529,23 @@ jobs:
           set -euo pipefail
 
           HEALTH_URL="${FUNCTION_URL%/}/health"
+          RESPONSE_FILE="/tmp/lambda-response.txt"
 
           echo "Testing Lambda Function URL: $HEALTH_URL"
 
-          # A newly deployed image can have a slow first initialization.
-          # Try up to three times before treating the deployment as failed.
           HTTP_STATUS="000"
 
           for ATTEMPT in 1 2 3; do
             echo "Health-check attempt: $ATTEMPT"
+
+            rm -f "$RESPONSE_FILE"
 
             HTTP_STATUS="$(
               curl \
                 --silent \
                 --show-error \
                 --location \
-                --output /tmp/lambda-response.txt \
+                --output "$RESPONSE_FILE" \
                 --write-out '%{http_code}' \
                 --connect-timeout 15 \
                 --max-time 120 \
@@ -531,7 +565,7 @@ jobs:
           done
 
           echo "Response body:"
-          head -c 2000 /tmp/lambda-response.txt 2>/dev/null || true
+          head -c 2000 "$RESPONSE_FILE" 2>/dev/null || true
           echo
 
           if [[ "$HTTP_STATUS" != "200" ]]; then
@@ -566,9 +600,10 @@ jobs:
             echo "- Function: \`$DEPLOYED_FUNCTION_NAME\`"
             echo "- Repository: \`$ECR_REPOSITORY\`"
             echo "- Architecture: \`arm64\`"
-            echo "- Image tag: \`$GITHUB_SHA\`"
+            echo "- Backend commit: \`$GITHUB_SHA\`"
             echo "- Image URI: \`$IMAGE_URI\`"
             echo "- Function URL: $FUNCTION_URL"
+            echo "- Wiki source: bundled in backend repository"
           } >> "$GITHUB_STEP_SUMMARY"
 
           echo "Lambda Function URL: $FUNCTION_URL"
