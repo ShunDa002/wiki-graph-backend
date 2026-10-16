@@ -250,14 +250,25 @@ jobs:
             --query 'imageDetails[0].{Digest:imageDigest,PushedAt:imagePushedAt,Size:imageSizeInBytes}' \
             --output table
 
-      - name: Inspect pushed image platform
+      - name: Pull and inspect ARM64 image
         shell: bash
         run: |
           set -euo pipefail
-          INSPECTION="$(docker buildx imagetools inspect "$IMAGE_URI")"
-          printf '%s\n' "$INSPECTION"
-          if ! grep -Eq 'Platform:[[:space:]]+linux/arm64|linux/arm64' <<< "$INSPECTION"; then
-            echo "::error::Pushed image does not advertise linux/arm64."
+
+          docker pull \
+            --platform linux/arm64 \
+            "$IMAGE_URI"
+
+          IMAGE_PLATFORM="$(
+            docker image inspect \
+              --format '{{.Os}}/{{.Architecture}}' \
+              "$IMAGE_URI"
+          )"
+
+          echo "Image platform: $IMAGE_PLATFORM"
+
+          if [[ "$IMAGE_PLATFORM" != "linux/arm64" ]]; then
+            echo "::error::Expected image platform linux/arm64, got: $IMAGE_PLATFORM"
             exit 1
           fi
 
@@ -266,7 +277,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          docker pull --platform linux/arm64 "$IMAGE_URI"
           docker run \
             --rm \
             --platform linux/arm64 \
