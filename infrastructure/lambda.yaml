@@ -42,7 +42,7 @@ Resources:
           GRAPH_OUTPUT_PATH: /tmp/generated/graph.json
           GRAPH_WRITE_SNAPSHOT: "false"
           GRAPH_CACHE_ENABLED: "true"
-          GRAPH_SOURCE_FOLDERS: '["sources","concepts","decisions","questions","syntheses","experiments","projects"]'
+          GRAPH_SOURCE_FOLDERS: '["sources","concepts"]'
           CHAT_SOURCE_FOLDERS: '["sources","concepts"]'
           FRONTEND_ORIGIN: !Sub '["${FrontendOrigin}"]'
           OPENROUTER_API_KEY: !Ref OpenRouterApiKey

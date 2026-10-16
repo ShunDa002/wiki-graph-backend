@@ -6,11 +6,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 DEFAULT_GRAPH_SOURCE_FOLDERS = [
     "sources",
     "concepts",
-    "decisions",
-    "questions",
-    "syntheses",
-    "experiments",
-    "projects",
+    # "decisions",
+    # "questions",
+    # "syntheses",
+    # "experiments",
+    # "projects",
 ]
 
 
