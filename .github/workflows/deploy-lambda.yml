@@ -287,20 +287,21 @@ jobs:
           from pathlib import Path
 
           wiki_dir = Path("/var/task/data/source-repo/wiki")
-          files = sorted(
-              path
-              for path in wiki_dir.rglob("*")
-              if path.is_file() and path.suffix.lower() in {".md", ".markdown"}
-          ) if wiki_dir.is_dir() else []
+          source_folders = ("sources", "concepts")
+          files = []
+
+          for folder in source_folders:
+              folder_path = wiki_dir / folder
+              folder_files = sorted(folder_path.rglob("*.md")) if folder_path.is_dir() else []
+              print(f"{folder}: {len(folder_files)} Markdown files")
+              if not folder_files:
+                  print(f"Required Wiki source folder is missing or empty: {folder_path}", file=sys.stderr)
+                  raise SystemExit(1)
+              files.extend(folder_files)
 
           print(f"Verified Wiki directory: {wiki_dir}")
-          print(f"Markdown Wiki files in image: {len(files)}")
-
-          if not files:
-              print(f"No Markdown Wiki files found under: {wiki_dir}", file=sys.stderr)
-              raise SystemExit(1)
-
-          print("Sample Wiki files:")
+          print(f"Chatbot Markdown files in image: {len(files)}")
+          print("Sample chatbot Wiki files:")
           for path in files[:20]:
               print(path.relative_to(wiki_dir))
           '
@@ -444,6 +445,23 @@ jobs:
               || true
             exit 1
           fi
+
+          python - "$RESPONSE_FILE" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          pages = payload.get("wiki_pages", 0)
+          wiki = payload.get("wiki", {})
+
+          if not isinstance(pages, int) or pages <= 0:
+              raise SystemExit(f"Health check failed: wiki_pages={pages!r}")
+          if wiki.get("loaded") is not True:
+              raise SystemExit(f"Health check failed: wiki.loaded={wiki.get('loaded')!r}")
+
+          print(f"Runtime Wiki pages: {pages}")
+          PY
 
       - name: Write deployment summary
         if: success()

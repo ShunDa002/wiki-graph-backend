@@ -1,5 +1,7 @@
 from pathlib import Path
 
+APP_ROOT = Path(__file__).resolve().parent
+
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -17,9 +19,11 @@ DEFAULT_GRAPH_SOURCE_FOLDERS = [
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    wiki_repo_dir: Path = Path("./data/source-repo")
-    wiki_dir: Path = Path("./data/source-repo/wiki")
-    graph_output_path: Path = Path("./data/generated/graph.json")
+    # Environment variables override these local defaults. Lambda injects
+    # absolute /var/task paths through Docker/CloudFormation.
+    wiki_repo_dir: Path = APP_ROOT / "data" / "source-repo"
+    wiki_dir: Path = APP_ROOT / "data" / "source-repo" / "wiki"
+    graph_output_path: Path = APP_ROOT / "data" / "generated" / "graph.json"
 
     # Only Markdown files below these wiki subfolders become graph nodes.
     # Root files such as wiki/index.md and wiki/log.md are therefore excluded.
@@ -89,8 +93,19 @@ class Settings(BaseSettings):
         ]
         if missing:
             raise ValueError(
-                "Configured graph source folders do not exist under WIKI_DIR: "
+                "Configured Wiki source folders do not exist under WIKI_DIR: "
                 + ", ".join(missing)
+            )
+
+        empty = [
+            folder
+            for folder in sorted(configured_folders)
+            if not any((self.wiki_dir / folder).rglob("*.md"))
+        ]
+        if empty:
+            raise ValueError(
+                "Configured Wiki source folders contain no .md files: "
+                + ", ".join(empty)
             )
 
         return self

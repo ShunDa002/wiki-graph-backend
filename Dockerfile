@@ -33,21 +33,28 @@ import os
 import sys
 from pathlib import Path
 
-wiki_dir = Path(os.environ["WIKI_DIR"])
-wiki_files = sorted(
-    path
-    for path in wiki_dir.rglob("*")
-    if path.is_file() and path.suffix.lower() in {".md", ".markdown"}
-)
+wiki_repo_dir = Path(os.environ["WIKI_REPO_DIR"]).resolve()
+wiki_dir = Path(os.environ["WIKI_DIR"]).resolve()
+source_folders = ("sources", "concepts")
+
+for required_dir in (wiki_repo_dir, wiki_dir):
+    if not required_dir.is_dir():
+        print(f"ERROR: Required directory does not exist: {required_dir}", file=sys.stderr)
+        raise SystemExit(1)
+
+wiki_files = []
+for folder in source_folders:
+    folder_path = wiki_dir / folder
+    folder_files = sorted(folder_path.rglob("*.md")) if folder_path.is_dir() else []
+    print(f"{folder}: {len(folder_files)} Markdown files")
+    if not folder_files:
+        print(f"ERROR: Required Wiki source folder is missing or empty: {folder_path}", file=sys.stderr)
+        raise SystemExit(1)
+    wiki_files.extend(folder_files)
 
 print(f"Verified Wiki directory: {wiki_dir}")
-print(f"Markdown Wiki file count: {len(wiki_files)}")
-
-if not wiki_files:
-    print(f"ERROR: No Markdown Wiki files found under: {wiki_dir}", file=sys.stderr)
-    raise SystemExit(1)
-
-print("Sample Wiki files:")
+print(f"Chatbot Markdown file count: {len(wiki_files)}")
+print("Sample chatbot Wiki files:")
 for path in wiki_files[:20]:
     print(path.relative_to(wiki_dir))
 PY

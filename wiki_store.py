@@ -53,6 +53,36 @@ class WikiStore:
         self.concepts_docs: list[dict[str, Any]] = []
         self.sources_docs: list[dict[str, Any]] = []
         self._lock = RLock()
+        self._loaded = False
+
+    def diagnostics(self) -> dict[str, Any]:
+        folder_counts: dict[str, int | None] = {}
+        for folder in self.source_folders:
+            folder_path = self.wiki_dir / folder
+            folder_counts[folder] = (
+                len(list(folder_path.rglob("*.md")))
+                if folder_path.is_dir()
+                else None
+            )
+
+        with self._lock:
+            loaded = self._loaded
+            document_count = len(self.documents)
+
+        return {
+            "directory": str(self.wiki_dir),
+            "directory_exists": self.wiki_dir.is_dir(),
+            "source_folders": self.source_folders,
+            "folder_markdown_counts": folder_counts,
+            "loaded": loaded,
+            "document_count": document_count,
+        }
+
+    def ensure_loaded(self) -> None:
+        with self._lock:
+            if self._loaded:
+                return
+            self.load()
 
     def load(self) -> None:
         documents_by_folder: dict[str, list[dict[str, Any]]] = {}
@@ -105,6 +135,7 @@ class WikiStore:
             self.matrix = matrix
             self.sources_docs = documents_by_folder.get("sources", [])
             self.concepts_docs = documents_by_folder.get("concepts", [])
+            self._loaded = True
 
     def search(self, question: str, top_k: int = 4) -> list[dict[str, Any]]:
         with self._lock:

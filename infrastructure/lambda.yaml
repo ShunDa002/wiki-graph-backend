@@ -37,6 +37,7 @@ Resources:
       EphemeralStorage: { Size: 1024 }
       Environment:
         Variables:
+          # Keep these paths aligned with Dockerfile COPY/ENV destinations.
           WIKI_REPO_DIR: /var/task/data/source-repo
           WIKI_DIR: /var/task/data/source-repo/wiki
           GRAPH_OUTPUT_PATH: /tmp/generated/graph.json

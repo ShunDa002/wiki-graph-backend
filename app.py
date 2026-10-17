@@ -31,7 +31,7 @@ chat_service = ChatService(
 async def lifespan(app: FastAPI):
     logger.info("Loading graph and chat indexes")
     graph_service.get_graph()
-    wiki_store.load()
+    wiki_store.ensure_loaded()
     yield
     logger.info("LLM Wiki API shutting down")
 
@@ -57,12 +57,16 @@ app.include_router(make_chat_router(chat_service, settings))
 
 @app.get("/health", tags=["system"])
 def health() -> dict:
+    # Lambda adapters may not always run ASGI lifespan initialization before a
+    # probe. Make readiness explicit and idempotent instead of reporting 0.
+    wiki_store.ensure_loaded()
     graph = graph_service.get_graph()
     return {
         "status": "ok",
         "language": "English",
         "model": settings.openrouter_model,
         "wiki_pages": len(wiki_store.documents),
+        "wiki": wiki_store.diagnostics(),
         "graph": {
             "ready": True,
             "node_count": graph.metadata.nodeCount,
