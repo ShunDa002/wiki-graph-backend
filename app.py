@@ -1,9 +1,8 @@
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
-# import uvicorn
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 from chat.routes import make_chat_router
 from chat.service import ChatService
@@ -39,7 +38,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="LLM Wiki API",
     description="Read-only Wiki graph and English Q&A endpoints.",
-    version="1.1.0",
+    version="1.2.0",
     lifespan=lifespan,
 )
 
@@ -55,18 +54,45 @@ app.include_router(make_router(graph_service, settings))
 app.include_router(make_chat_router(chat_service, settings))
 
 
+@app.get("/health/live", tags=["system"])
+def liveness() -> dict[str, str]:
+    return {"status": "alive"}
+
+
 @app.get("/health", tags=["system"])
 def health() -> dict:
-    # Lambda adapters may not always run ASGI lifespan initialization before a
-    # probe. Make readiness explicit and idempotent instead of reporting 0.
-    wiki_store.ensure_loaded()
-    graph = graph_service.get_graph()
+    try:
+        wiki_store.ensure_loaded()
+        graph = graph_service.get_graph()
+    except Exception as exc:
+        logger.exception("Readiness check failed")
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "not_ready",
+                "message": "Application data could not be initialized.",
+            },
+        ) from exc
+
+    diagnostics = wiki_store.diagnostics()
+    if diagnostics["document_count"] == 0 or diagnostics["concept_count"] == 0:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "not_ready",
+                "message": "Wiki documents or concepts are unavailable.",
+                "wiki_pages": diagnostics["document_count"],
+                "concept_count": diagnostics["concept_count"],
+            },
+        )
+
     return {
         "status": "ok",
         "language": "English",
-        "model": settings.openrouter_model,
-        "wiki_pages": len(wiki_store.documents),
-        "wiki": wiki_store.diagnostics(),
+        "wiki_pages": diagnostics["document_count"],
+        "concept_count": diagnostics["concept_count"],
+        "source_count": diagnostics["source_count"],
+        "wiki": diagnostics,
         "graph": {
             "ready": True,
             "node_count": graph.metadata.nodeCount,
@@ -74,7 +100,3 @@ def health() -> dict:
             "source_version": graph.sourceVersion,
         },
     }
-
-
-# if __name__ == "__main__":
-#     uvicorn.run("app:app", host="0.0.0.0", port=8080, reload=True, log_level="debug")

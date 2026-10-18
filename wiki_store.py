@@ -31,10 +31,14 @@ def parse_markdown(path: Path, wiki_dir: Path) -> dict[str, Any]:
     elif not isinstance(tags, list):
         tags = []
 
+    title = metadata.get("title")
+    if not isinstance(title, str) or not title.strip():
+        title = path.stem.replace("-", " ")
+
     return {
         "path": path.relative_to(wiki_dir).as_posix(),
-        "title": metadata.get("title", path.stem.replace("-", " ")),
-        "description": metadata.get("description", ""),
+        "title": title.strip(),
+        "description": str(metadata.get("description", "")),
         "tags": [str(tag) for tag in tags],
         "reviewed": bool(metadata.get("reviewed", False)),
         "confidence": str(metadata.get("confidence", "unknown")).lower(),
@@ -49,7 +53,7 @@ class WikiStore:
         self.source_folders = source_folders
         self.documents: list[dict[str, Any]] = []
         self.vectorizer: TfidfVectorizer | None = None
-        self.matrix = None
+        self.matrix: Any = None
         self.concepts_docs: list[dict[str, Any]] = []
         self.sources_docs: list[dict[str, Any]] = []
         self._lock = RLock()
@@ -66,17 +70,16 @@ class WikiStore:
             )
 
         with self._lock:
-            loaded = self._loaded
-            document_count = len(self.documents)
-
-        return {
-            "directory": str(self.wiki_dir),
-            "directory_exists": self.wiki_dir.is_dir(),
-            "source_folders": self.source_folders,
-            "folder_markdown_counts": folder_counts,
-            "loaded": loaded,
-            "document_count": document_count,
-        }
+            return {
+                "directory": str(self.wiki_dir),
+                "directory_exists": self.wiki_dir.is_dir(),
+                "source_folders": list(self.source_folders),
+                "folder_markdown_counts": folder_counts,
+                "loaded": self._loaded,
+                "document_count": len(self.documents),
+                "concept_count": len(self.concepts_docs),
+                "source_count": len(self.sources_docs),
+            }
 
     def ensure_loaded(self) -> None:
         with self._lock:
@@ -89,10 +92,16 @@ class WikiStore:
 
         for folder in self.source_folders:
             folder_path = self.wiki_dir / folder
+            if not folder_path.is_dir():
+                documents_by_folder[folder] = []
+                continue
+
+            resolved_folder = folder_path.resolve()
             documents_by_folder[folder] = [
                 parse_markdown(path, self.wiki_dir)
                 for path in sorted(folder_path.rglob("*.md"))
-                if path.resolve().is_relative_to(folder_path.resolve())
+                if path.is_file()
+                and path.resolve().is_relative_to(resolved_folder)
             ]
 
         documents = sorted(
@@ -115,7 +124,7 @@ class WikiStore:
                     str(document["title"]),
                     str(document["description"]),
                     " ".join(document["tags"]),
-                    document["body"],
+                    str(document["body"]),
                 ]
             )
             for document in documents
@@ -129,39 +138,47 @@ class WikiStore:
         )
         matrix = vectorizer.fit_transform(searchable_texts)
 
+        concepts_docs = documents_by_folder.get("concepts", [])
+        sources_docs = documents_by_folder.get("sources", [])
+
+        # Publish the new index atomically only after the complete load succeeds.
         with self._lock:
             self.documents = documents
             self.vectorizer = vectorizer
             self.matrix = matrix
-            self.sources_docs = documents_by_folder.get("sources", [])
-            self.concepts_docs = documents_by_folder.get("concepts", [])
+            self.sources_docs = sources_docs
+            self.concepts_docs = concepts_docs
             self._loaded = True
 
     def search(self, question: str, top_k: int = 4) -> list[dict[str, Any]]:
+        self.ensure_loaded()
+
+        cleaned_question = question.strip()
+        if not cleaned_question or top_k <= 0:
+            return []
+
         with self._lock:
             if self.matrix is None or self.vectorizer is None:
-                raise RuntimeError("WikiStore not loaded.")
-            documents = self.documents
+                raise RuntimeError("WikiStore index is unavailable after loading.")
+            documents = list(self.documents)
             matrix = self.matrix
             vectorizer = self.vectorizer
 
-        query_vector = vectorizer.transform([question])
+        query_vector = vectorizer.transform([cleaned_question])
         scores = cosine_similarity(query_vector, matrix).flatten()
-        question_lower = question.lower()
+        question_lower = cleaned_question.lower()
         results: list[dict[str, Any]] = []
 
         for index, score in enumerate(scores):
             document = documents[index]
             final_score = float(score)
             title = str(document["title"]).lower()
-
             if title and title in question_lower:
                 final_score += 0.20
             if document["reviewed"]:
                 final_score += 0.08
             if document["confidence"] == "high":
                 final_score += 0.05
-
             results.append({**document, "score": final_score})
 
         results.sort(key=lambda item: item["score"], reverse=True)
