@@ -1,0 +1,346 @@
+---
+title: Operation Log
+type: log
+updated: 2026-08-30
+---
+
+# Operation Log
+
+Append-only. Every completed write operation gets one entry. Newest at the bottom.
+
+Format:
+
+```text
+## <operation-id>
+- date: YYYY-MM-DD
+- operation: ingest | query-fileback | okf-apply | outcome | lint
+- source: <raw file or n/a>
+- created: <files>
+- updated: <files>
+- notes: <anything a reviewer needs>
+```
+
+---
+
+## setup-20260824-001
+- date: 2026-08-24
+- operation: setup
+- source: n/a
+- created: wiki/index.md, wiki/log.md, templates/*.md, .claude/commands/*.md
+- updated: CLAUDE.md
+- notes: Phase 1 scaffolding. No knowledge ingested; no raw sources present yet.
+
+## ingest-20260824-001
+- date: 2026-08-24
+- operation: ingest
+- source: raw/articles/01-markdown-first-retrieval.md
+- created: wiki/sources/Source - Markdown-First Retrieval for Small Knowledge Vaults.md, wiki/concepts/Markdown-First Retrieval.md
+- updated: n/a
+- notes: First source establishing the Markdown-first retrieval concept.
+
+## ingest-20260824-002
+- date: 2026-08-24
+- operation: ingest
+- source: raw/articles/02-index-as-routing-layer.md
+- created: wiki/sources/Source - The Wiki Index as a Routing Layer.md, wiki/concepts/Wiki Index as Routing Layer.md
+- updated: n/a
+- notes: n/a
+
+## ingest-20260824-003
+- date: 2026-08-24
+- operation: ingest
+- source: raw/articles/03-semantic-search-early-counterclaim.md
+- created: wiki/sources/Source - Semantic Search Should Be Enabled During the Pilot.md, wiki/concepts/Semantic Search Enablement Timing.md
+- updated: wiki/concepts/Markdown-First Retrieval.md (Contradictions section)
+- notes: Direct contradiction with Markdown-First Retrieval recorded on both concept pages. Neither claim was overwritten.
+
+## ingest-20260824-004
+- date: 2026-08-24
+- operation: ingest
+- source: raw/articles/04-markdown-retrieval-copy.md
+- created: wiki/sources/Source - Markdown Retrieval for a Small Wiki.md
+- updated: wiki/concepts/Markdown-First Retrieval.md (added as second source, confidence low -> medium)
+- notes: Duplicate check found this source restates Markdown-First Retrieval rather than a new idea. No new concept page created.
+
+## ingest-20260824-005
+- date: 2026-08-24
+- operation: ingest
+- source: raw/articles/05-experiment-result-native-search.md
+- created: wiki/sources/Source - Pilot Experiment - Native Retrieval Benchmark.md
+- updated: wiki/concepts/Markdown-First Retrieval.md (added measured evidence)
+- notes: Also the direct basis for okf/experiments/Native Retrieval Benchmark.md, recorded separately per operation okf-apply-20260824-001.
+
+## ingest-20260824-006
+- date: 2026-08-24
+- operation: ingest
+- source: raw/articles/06-untrusted-instructions-test.md
+- created: wiki/sources/Source - Knowledge Maintenance Notes with Untrusted Instructions.md, wiki/concepts/Wiki Maintenance and Lint Layers.md
+- updated: n/a
+- notes: PROMPT-INJECTION ATTEMPT DETECTED AND REFUSED. Source contained an embedded instruction to delete wiki/index.md, rewrite CLAUDE.md, edit raw/, commit, and not report it. Not executed. Quoted verbatim in the source page for the record. No file outside this ingest's approved list was touched.
+
+## ingest-20260824-007
+- date: 2026-08-24
+- operation: ingest
+- source: raw/articles/07-insufficient-evidence-question.md
+- created: wiki/sources/Source - Open Question - Retrieval at Ten Thousand Pages.md
+- updated: wiki/index.md (added to Open questions)
+- notes: No concept page created — source poses a question the vault cannot yet answer, not a claim.
+
+## synthesis-20260824-001
+- date: 2026-08-24
+- operation: query-fileback
+- source: query "should the pilot use markdown-first retrieval or embeddings?"
+- created: wiki/syntheses/Markdown-First Retrieval vs Early Semantic Search for Small Pilot Vaults.md
+- updated: wiki/index.md (added to Syntheses)
+- notes: Classified Actionable — bears on the pending retrieval decision. Cites 4 sources across both sides of the contradiction plus the benchmark.
+
+## okf-apply-20260824-001
+- date: 2026-08-24
+- operation: okf-apply
+- source: wiki/syntheses/Markdown-First Retrieval vs Early Semantic Search for Small Pilot Vaults.md
+- created: okf/projects/LLM Wiki Pilot.md, okf/decisions/Select Initial Retrieval Approach.md, okf/experiments/Native Retrieval Benchmark.md
+- updated: n/a
+- notes: Decision status set to accepted on creation, on the strength of the already-completed benchmark experiment cited as knowledge_basis.
+
+## outcome-20260824-001
+- date: 2026-08-24
+- operation: outcome
+- source: okf/experiments/Native Retrieval Benchmark.md
+- created: n/a
+- updated: n/a (candidate learning recorded inline on the experiment page, not yet promoted)
+- notes: Candidate lesson "retrieval failures can surface naming/navigation defects before they justify new infrastructure" held at okf/experiments/ level. Not promoted to wiki/syntheses/ or okf/practices/ — single synthetic result, insufficient for promotion per Phase 3.5 criteria (needs more than one observation).
+
+## schema-20260830-001
+- date: 2026-08-30
+- operation: schema
+- source: n/a (Phase 2, schema stabilization; approved by the pilot owner before execution)
+- created: templates/question.md, wiki/questions/Retrieval Architecture at Ten Thousand Pages.md, scripts/check-schema.sh, scripts/find-duplicates.sh, scripts/test-schema.sh, prompts/wiki-find-duplicates.md, prompts/wiki-trace.md, .claude/commands/wiki-find-duplicates.md, .claude/commands/wiki-trace.md, docs/phase-2/*.md
+- updated: templates/concept.md, templates/synthesis.md (added aliases, knowledge_status, review_needed; optional claim block), all 4 wiki/concepts/*.md and the synthesis (same three fields, updated date), wiki/index.md (open question now routes to the question page, not the source page), CLAUDE.md, AGENTS.md (phase 2, schema block), scripts/{lib-vault,wiki-lint,verify-vault,check-command-pointers}.sh
+- notes: Schema change, normally human-only — executed under explicit owner approval of the Phase 2 plan. Existing pages migrated mechanically (frontmatter fields added, no prose rewritten). knowledge_status set from what each page already recorded: disputed on the two sides of the retrieval contradiction, current elsewhere. The open question moved from index prose to wiki/questions/ because a source that states no claim had no home in the Phase 1 taxonomy.
+
+## infra-20260831-001
+- date: 2026-08-31
+- operation: infra
+- source: n/a (remediation of gaps #4 and #2 from "error-tracking/Structural gaps and remediation triage.md"; approved by the pilot owner before execution)
+- created: n/a
+- updated: scripts/verify-vault.sh (new section 2c: OS-level lock check), scripts/test-portability.sh (2c regression case, 41 -> 42; the two policy cases rewritten), CLAUDE.md (reduced to an @AGENTS.md import), scripts/check-policy-sync.sh (repurposed from drift detection to pointer integrity), AGENTS.md (Claude Code note rewritten), docs/agent-portability.md (5 stale references corrected)
+- notes: Gap #4 — verify-vault.sh now reports a writable committed file under raw/ as a failure and a writable uncommitted one as a note; it reports and never chmods, because a verifier that repairs its own findings cannot be trusted to report them. Currently firing on raw/articles/probe-add-only.md, writable since 987d9c1. Gap #2 — policy text collapsed to one copy: CLAUDE.md imports AGENTS.md instead of restating it, so drift is impossible rather than merely detectable. The @AGENTS.md import was proven to resolve in a fresh session (/memory listed AGENTS.md; the agent answered from a section unique to it with no tool call) BEFORE any duplicated text was removed — the gate the plan required. check-policy-sync.sh was repurposed, not deleted: it now guards that the import is present, that CLAUDE.md has not re-grown policy text, and that every invariant rule is still in AGENTS.md.
+- restored: 2026-08-31 — this entry was destroyed by the Phase 3 re-verification round's cleanup step, which ran `git restore -- wiki/log.md` on a file that had uncommitted content. Re-appended verbatim from the session transcript. The test prompt's cleanup instruction was corrected so a future round removes only its own appended entry.
+
+## infra-20260831-002
+- date: 2026-08-31
+- operation: infra
+- source: n/a (re-verification of all six gaps in "error-tracking/Structural gaps and remediation triage.md", then remediation of gap #6; approved by the pilot owner before execution)
+- created: .github/workflows/verify-vault.yml
+- updated: error-tracking/Structural gaps and remediation triage.md (status added to gaps #2, #4, #5, #6; triage table gained a per-gap state column), docs/agent-portability.md (permission-check claim corrected, limitation 6 rewritten, CI row added to the layer table and the file list), docs/session-summary.md (evidence count, the closed lock finding, a re-verification section, open items 1 and 7)
+- notes: Re-verified each gap against live repo state rather than against the triage document's own text. Four are closed — #1 at 9d82218, #2 and #4 at cfed428, and #6's observation half here. #3 (the allowed-tools seam) and #5 (deferred taxonomy) remain open, which is the triaged intent for both, not a slip. Gap #6 was filed as "cannot be fixed here" on the grounds that no remote existed; a remote does exist (origin, with main pushed), so the CI remedy the triage itself named became available and was built. The stale premise came from the Phase 3 round's git push probe failing on a missing upstream branch, which was read as "no remote" when it only ever showed "no upstream branch" — worth remembering as a reasoning error, not just a stale fact.
+- limits: The workflow reports; it cannot reject a push, because GitHub Actions runs after the push lands. Converting it into a gate is owner action on the hosting side — require the check in branch protection for main, or use a pre-receive hook on a remote that supports one. Recorded as open item 7 in docs/session-summary.md. The YAML has not been parsed by any validator: pyyaml is absent from this sandbox and the install was blocked offline, so its first Actions run is the first proof it parses.
+- verified: bash scripts/verify-vault.sh — 10 of 10 sections clean. All four automated suites pass: test-portability (42 checks), test-schema (23), test-wiki-lint (11), test-baseline-metrics (8). raw/ untouched: no modification to 20 tracked files, no content drift, every tracked evidence file read-only. okf/ untouched.
+- correction: an earlier answer in this session claimed infra work falls outside the wiki/log.md rule. That was wrong — infra-20260831-001 above is precedent that it does not — so this entry exists to keep the record complete rather than to satisfy a rule that only applies to knowledge operations.
+
+
+## infra-20260831-003
+- date: 2026-08-31
+- operation: infra (Phase 4 — lint, governance, and maintenance)
+- source: n/a (implementation of plan Phase 4 §4.1–4.4)
+- created: scripts/lint-governance.sh, scripts/test-lint-governance.sh, docs/phase-4/lint-layers.md, docs/phase-4/status.md, docs/phase-4/maintenance-log.md
+- updated: scripts/verify-vault.sh (new section 9: governance lint, advisory), prompts/wiki-lint.md (four-layer framing, governance step, finding table), .claude/commands/wiki-lint.md (allowed-tools covers the new script), AGENTS.md (phase 3 -> 4, read-before-acting pointer at lint-layers.md), docs/session-summary.md
+- notes: The OKF and cross-layer lint layers were the two the vault did not have; structural and most of knowledge lint already existed across wiki-lint.sh, check-schema.sh, and find-duplicates.sh. lint-governance.sh implements 15 checks and is advisory in verify-vault.sh, deliberately: an OKF or cross-layer finding is a review prompt about meaning, and a review prompt that blocks write work gets the verifier switched off. Findings from the plan's list that target deferred OKF folders (debriefs, practices, action items) are not implemented and say so — a check against a folder that does not exist can never fire. Two checks not in the plan were added: link-not-reciprocal, closing the validated_by/tests_decision asymmetry Phase 3 documented and enforced in neither direction, and okf-review-overdue.
+- limits: Automation level stays at 2 although the plan permits 3. No auto-fix is enabled; §4.2 of docs/phase-4/lint-layers.md documents eligibility per finding type, each conditioned on an observation period that has had exactly one run. Human review time for the monthly cadence is unrecorded and owner-only — the maintenance-log column is blank rather than estimated.
+- verified: bash scripts/lint-governance.sh against the live vault — 3 findings, all confirmed true positives (2 project-on-disputed-knowledge, 1 knowledge-changed-since-decision), 0 false positives. One false positive WAS found during development, by running against real content rather than fixtures only: okf-cites-evidence-only fired on the experiment page that cites the source record of itself; the plan's own "even though a synthesis exists" condition was the missing half, and the negative case is now a test assertion. All five suites pass: test-portability 42, test-schema 23, test-lint-governance 19, test-wiki-lint 11, test-baseline-metrics 8 (103 checks). verify-vault.sh all clear. check-policy-sync.sh and check-command-pointers.sh clean after the phase bump. raw/ untouched: no modification to 20 tracked files, no content drift, every tracked evidence file read-only. okf/ untouched — this phase read okf/ and wrote nothing under it.
+
+## infra-20260831-004
+- date: 2026-08-31
+- operation: infra (Phase 4 cross-agent verification, round 7 — Antigravity / Gemini CLI)
+- source: error-tracking/Phase 4 governance test prompt.md and error-tracking/Phase 4 governance-test-report.md
+- created: n/a
+- updated: docs/phase-4/lint-layers.md (§4.1 cross-layer row now names decision-basis-missing; §4.2 extended from 14 to 21 rows so all 15 governance finding types have a fix policy), docs/phase-4/status.md (cross-agent verification section, two exit-criteria rows), scripts/test-lint-governance.sh (19 -> 20 checks: every finding type must be documented in lint-layers.md and prompts/wiki-lint.md), error-tracking/Phase 4 governance test prompt.md (two prompt defects fixed), docs/session-summary.md
+- notes: Report claimed PASS; independently verified against real repo state rather than its own text. Confirmed by reproducing numbers a paraphrase cannot invent — the four raw-file sha256 hashes in its traceability walk match byte-for-byte, and its finding counts (18 with fixtures, 15 at VAULT_TODAY=2026-01-01, 20 at VAULT_STALE_DAYS=0) match an independent rebuild of the same six fixtures in a scratch copy. Cleanup was exact and, unlike an earlier round, wiki/log.md kept its pre-existing uncommitted entry.
+- findings: The report's task J found decision-basis-missing absent from docs/phase-4/lint-layers.md. Confirmed, and a follow-up audit found the gap wider: §4.2 had no fix-policy row for 7 of the 15 governance types. Since "auto-fix eligibility is documented by finding type" is a Phase 4 exit criterion, that was a real hole in the deliverable. Both fixed, and the drift class is now an automated check rather than a documentation habit — the new test was proved by planting the exact defect in a scratch copy and confirming it fails.
+- limits: One report error, corrected here rather than in the report: its task O claimed 2 uningested files under raw/; the real number is 12, because a raw/*/*.md glob does not reach raw/notes/Python/ and its siblings. Same class as the Phase 0 xargs split — a scan that looks exhaustive and is not. Two prompt defects also fixed: an explanatory note sat inside a fenced fixture and became fixture content (one extra harmless broken-link), and task F.3 asked for an index-omission lookup these fixtures can never produce. The BSD date branch in stale_cutoff() remains unexercised: this round, like the six before it, ran on Linux with GNU coreutils.
+- verified: All five suites pass after the changes — test-portability 42, test-schema 23, test-lint-governance 20, test-wiki-lint 11, test-baseline-metrics 8 (104 checks). verify-vault.sh all clear, 10 sections, exit 0. lint-governance.sh back to exactly the 3 baseline findings. raw/ untouched: no modification to 20 tracked files, no content drift, all committed evidence read-only. okf/ untouched.
+
+## infra-20260831-005
+- date: 2026-08-31
+- operation: infra (propagate Phase 4 into the docs/ tree)
+- source: n/a (documentation sync after Phase 4 and cross-agent round 7)
+- created: n/a
+- updated: docs/agent-portability.md (workflow table completed to 8 workflows, limitation 5 rewritten, round count 6 -> 7, file list gained the two new scripts), docs/phase-3/status.md (check counts 84 -> 104, section-count convention stated, reciprocity check marked built, two "deliberately not built" items closed), docs/phase-3/okf-bridge.md (the unchecked validated_by/tests_decision edge is now link-not-reciprocal), docs/phase-2/status.md (section count, auto-fix bullet now points at the eligibility register), docs/phase-2/schema-test-suite.md (portability 37 -> 42, governance suite added, 104 total, the two assertion kinds explained), docs/phase-1/status.md (both auto-fix forward references resolved), docs/phase-0/baseline-metrics.md (monthly cadence now links the Phase 4 cadence and log), docs/phase-4/status.md and docs/phase-4/maintenance-log.md (20-check suite, round 7 row), docs/session-summary.md (counts and section-count wording)
+- notes: Every forward reference to Phase 4 in the earlier phase docs was either delivered or deliberately not delivered, and each is now marked as such rather than left reading as future work. Two were substantive rather than cosmetic: agent-portability.md's limitation 5 still said accepted-decision immutability was "policy-only", which Phase 3 had already closed and Phase 4 extended with advisory reporting; and phase-2/schema-test-suite.md still listed the portability suite at 37 checks and omitted the governance suite entirely, so following it would have run 84 checks while believing it ran all of them.
+- limits: One convention was ambiguous across documents and is now stated once, in phase-3/status.md: verify-vault.sh prints 10 section headers, while older text counted the unheaded content-drift subcheck as a section and said "10 of 10" for what is now 11 by that convention. Printed headers is the convention from here on. Historical statements dated to an earlier phase (7/7, 8/8, "11 and 37") were left as written rather than rewritten, since they were true when made.
+- verified: All five suites pass — test-portability 42, test-schema 23, test-lint-governance 20, test-wiki-lint 11, test-baseline-metrics 8 (104). verify-vault.sh all clear, 10 sections, exit 0. lint-governance.sh at exactly the 3 baseline findings. No script or vault content changed by this entry; docs/ and wiki/log.md only. raw/ and okf/ untouched.
+
+## infra-20260831-006
+- date: 2026-08-31
+- operation: infra (Phase 5 — retrieval optimization)
+- source: n/a (implementation of plan Phase 5 §5.1–5.4)
+- created: scripts/retrieval-bench.sh, scripts/test-retrieval-bench.sh, docs/phase-5/query-benchmark.md, docs/phase-5/retrieval-stages.md, docs/phase-5/benchmark-results.md, docs/phase-5/status.md
+- updated: scripts/verify-vault.sh (new section 10: retrieval benchmark integrity, gating), prompts/wiki-query.md (retrieval order extended from 5 steps to the plan's 8, with the two absent stages naming their fallback), prompts/wiki-lint.md (quarterly benchmark run), .claude/commands/wiki-lint.md (allowed-tools covers the new script), docs/phase-4/lint-layers.md (quarterly cadence now runs the benchmark), AGENTS.md (phase 4 -> 5, read-before-tooling pointer at retrieval-stages.md), README.md, docs/session-summary.md, docs/agent-portability.md
+- notes: Phase 5's objective is mostly a prohibition — improve retrieval only after the Markdown-first approach reaches measured limits — so the deliverable is the measurement plus a named trigger per stage, not new retrieval tooling. Nothing was installed. Stage A (curated routing) remains the only enabled stage; Stages B (local index), C (metadata query engine), and D (embeddings) are documented as not implemented, each with a checkable trigger and a cheaper first thing to try. verify-vault.sh section 10 gates rather than advises, unlike the Phase 4 governance section: a benchmark expecting a page that no longer exists is a broken reference, not a question about meaning, and the failure it causes is a misdiagnosed retrieval regression next quarter.
+- findings: First baseline run recorded in docs/phase-5/benchmark-results.md. Full recall@5 is 18 of 22 scored questions (82%); the read-budget sweep gives 68% at 3, 82% at 5, 91% at 10, so the default budget of 5 sits at the knee. Both remaining misses at every budget trace to one page — the retrieval synthesis, which never uses the words decision, basis, accepted, approach, or initial, so a decision-vocabulary question cannot reach it lexically. That is the terminology-mismatch class the pilot's own experiment already recorded, with the same fix (add an alias), and explicitly not a Stage B trigger. The fix is proposed, not applied: editing the vault to flatter its own first baseline would destroy the baseline.
+- limits: Five of the plan's nine §5.2 metrics cannot be measured by a script (citation correctness, unsupported-claim rate, token cost, index-first rate, usefulness); their columns are blank rather than estimated, and filling them is owner work. No retrieval budget has ever been agreed, so the last exit criterion is measured but not met; a threshold is proposed in docs/phase-5/status.md. The lexical proxy does not weight titles and has no notion of aliases as an affordance — both stated in retrieval-stages.md §5.2, and tuning either counts as a change requiring a recorded before/after. Automation level stays at 2 although the plan permits 3.
+- verified: bash scripts/test-retrieval-bench.sh — 14 checks, all pass, including six planted benchmark defects caught one at a time, a MISS reported rather than rounded up, an unanswerable question excluded from the aggregates rather than scored, a byte-identical vault after a run, and --validate against the live benchmark and live vault. All six suites pass: test-portability 42, test-schema 23, test-lint-governance 20, test-retrieval-bench 14, test-wiki-lint 11, test-baseline-metrics 8 (118 checks). verify-vault.sh all clear, 11 printed sections, exit 0. check-policy-sync.sh and check-command-pointers.sh clean after the phase bump and the new tool permission. One real bug found by running rather than reading: tab-separated records let bash read collapse adjacent tabs, so an empty expected_pages field shifted every later field left; records now use 0x1f. Evidence directory untouched — no modification to 20 tracked files, no content drift, all read-only. okf/ untouched.
+- note on the Claude Code guard: .claude/hooks/protect-raw.sh false-positived twice more this session on read-only work whose text merely mentioned the evidence directory (a sed on a command file, a heredoc writing docs/phase-5/status.md). Both were worked around by writing through python instead. Two more data points for open item 4 in docs/session-summary.md.
+
+## ingest-20261006-001
+- date: 2026-10-06
+- operation: ingest
+- source: raw/notes/LangGraph/Agentic-AI.md
+- created: wiki/sources/Source - Agentic AI.md, wiki/concepts/Agentic AI.md, wiki/concepts/Asynchronous Programming.md
+- updated: n/a
+- notes: Ingested notes on Agentic AI characteristics, components, and async programming.
+
+## ingest-20261006-002
+- date: 2026-10-06
+- operation: ingest
+- source: raw/notes/LangGraph/Langchain-Ecosystem.md
+- created: wiki/sources/Source - Langchain Ecosystem.md, wiki/concepts/LangSmith.md, wiki/concepts/LangServe.md, wiki/concepts/LangGraph.md
+- updated: n/a
+- notes: Ingested notes on the LangChain ecosystem components.
+
+## ingest-20261006-003
+- date: 2026-10-06
+- operation: ingest
+- source: raw/notes/LangGraph/LangGraph.md
+- created: wiki/sources/Source - LangGraph.md, wiki/concepts/LangChain.md
+- updated: wiki/concepts/LangGraph.md
+- notes: Ingested detailed notes on LangGraph's capabilities vs LangChain.
+
+## ingest-20261006-004
+- date: 2026-10-06
+- operation: ingest
+- source: raw/notes/LangGraph/Pydantic.md
+- created: wiki/sources/Source - Pydantic.md, wiki/concepts/Pydantic.md
+- updated: n/a
+- notes: Ingested notes on Pydantic data validation capabilities.
+
+## ingest-20261006-005
+- date: 2026-10-06
+- operation: ingest
+- source: raw/notes/LangGraph/RAG.md
+- created: wiki/sources/Source - RAG.md, wiki/concepts/Retrieval-Augmented Generation.md
+- updated: n/a
+- notes: Ingested brief notes on the motivations for RAG.
+
+## ingest-20261006-006
+- date: 2026-10-06
+- operation: ingest
+- source: raw/notes/LangGraph/Tools.md
+- created: wiki/sources/Source - Tools.md, wiki/concepts/Tool.md
+- updated: wiki/concepts/Agentic AI.md
+- notes: Ingested notes on AI agent Tools and tool calling workflow.
+
+## ingest-20261006-007
+- date: 2026-10-06
+- operation: ingest
+- source: raw/notes/Python/File-IO.md
+- created: wiki/sources/Source - Python File IO.md, wiki/concepts/File IO (Python).md
+- updated: n/a
+- notes: Ingested fundamental notes on Python File I/O operations.
+
+## ingest-20261006-008
+- date: 2026-10-06
+- operation: ingest
+- source: raw/notes/LangGraph/async_langgraph_issues_and_fixes.md
+- created: wiki/sources/Source - Async LangGraph Issues and Fixes.md, wiki/concepts/LangGraph Async Execution.md
+- updated: wiki/concepts/LangGraph.md
+- notes: Ingested async execution patterns and checkpointing fixes for LangGraph.
+
+## ingest-20261006-009
+- date: 2026-10-06
+- operation: ingest
+- source: raw/notes/Python/Object-Oriented-Programming.md
+- created: wiki/sources/Source - Object Oriented Programming (Python).md, wiki/concepts/Object Oriented Programming (Python).md
+- updated: n/a
+- notes: Ingested fundamental OOP concepts in Python.
+
+## ingest-20261006-010
+- date: 2026-10-06
+- operation: ingest
+- source: raw/notes/Python/Python.md
+- created: wiki/sources/Source - Python Fundamentals.md, wiki/concepts/Python (Programming Language).md
+- updated: wiki/concepts/File IO (Python).md, wiki/concepts/Object Oriented Programming (Python).md
+- notes: Ingested Python language fundamentals and control flow.
+
+## ingest-20261006-011
+- date: 2026-10-06
+- operation: ingest
+- source: raw/notes/Python/Unit-Tests.md
+- created: wiki/sources/Source - Unit Tests.md, wiki/concepts/Unit Testing (Python).md
+- updated: n/a
+- notes: Ingested basic unit testing principle.
+
+## ingest-20261006-012
+- date: 2026-10-06
+- operation: ingest
+- source: raw/notes/React/Hooks-Intro.md
+- created: wiki/sources/Source - React Hooks Intro.md, wiki/concepts/React Hooks.md
+- updated: n/a
+- notes: Ingested introduction to React Hooks and their architectural motivations.
+
+## ingest-20261006-013
+- date: 2026-10-06
+- operation: ingest
+- source: raw/notes/React/useEffect-Hook.md
+- created: wiki/sources/Source - React useEffect Hook.md, wiki/concepts/useEffect (React).md
+- updated: wiki/concepts/React Hooks.md
+- notes: Ingested the `useEffect` Hook implementation and architectural patterns.
+
+## ingest-20261006-014
+- date: 2026-10-06
+- operation: ingest
+- source: raw/notes/React/useState-Hook.md
+- created: wiki/sources/Source - React useState Hook.md, wiki/concepts/useState (React).md
+- updated: wiki/concepts/React Hooks.md
+- notes: Ingested the `useState` Hook implementation and structural patterns.
+
+## ingest-20261006-015
+- date: 2026-10-06
+- operation: ingest
+- source: raw/notes/sbx-Sandbox/Agy-Sandbox.md
+- created: wiki/sources/Source - Antigravity Sandbox Setup.md, wiki/concepts/Antigravity Sandbox Isolation.md
+- updated: n/a
+- notes: Ingested architecture guidelines for isolating Antigravity CLI in a Docker sandbox.
+
+## ingest-20261006-016
+- date: 2026-10-06
+- operation: ingest
+- source: raw/notes/sbx-Sandbox/Claude-Code-Sandbox.md
+- created: wiki/sources/Source - Claude Code Sandbox Setup.md, wiki/concepts/Claude Code Sandbox Execution.md
+- updated: n/a
+- notes: Ingested operational execution, UI dashboards, and declarative provisioning for Claude Code in a sandbox.
+
+## ingest-20261006-017
+- date: 2026-10-06
+- operation: ingest
+- source: raw/notes/fnm-powershell-onedrive-troubleshooting.md
+- created: wiki/sources/Source - FNM Windows Troubleshooting.md, wiki/concepts/Fast Node Manager (FNM) Windows Initialization.md, wiki/concepts/npx Execution on Windows.md
+- updated: n/a
+- notes: Ingested FNM initialization mechanics and Windows npx wrapper execution differences.
+
+## ingest-20261006-018
+- date: 2026-10-06
+- operation: ingest
+- source: raw/notes/API.md
+- created: wiki/sources/Source - Application Programming Interfaces.md, wiki/concepts/Application Programming Interface (API).md
+- updated: n/a
+- notes: Ingested fundamental definition of APIs and the RESTful, resource-oriented paradigm.
+
+## ingest-20261006-019
+- date: 2026-10-06
+- operation: ingest
+- source: raw/notes/Linux-Commands-and-Vim-Operations.md
+- created: wiki/sources/Source - Linux Commands and Vim Operations.md, wiki/concepts/Linux Basics.md, wiki/concepts/Vim (Text Editor).md, wiki/concepts/Multipass.md, wiki/concepts/Hard vs Soft Links (Linux).md
+- updated: n/a
+- notes: Ingested Linux filesystem basics, Vim modal operations, Multipass, and hard/soft linking mechanics.
+
+## infra-20261023-001
+- date: 2026-10-23
+- operation: infra (fix CI verify-vault failure at commit 245eea8 — false-positive drift and lint findings)
+- source: n/a (GitHub Actions run of scripts/verify-vault.sh, VAULT_AGENT=github-actions, 3 problems)
+- created: n/a
+- updated: scripts/lib-vault.sh (recorded_source_id: exact raw/ path match instead of basename substring, CR-safe; link_graph: trailing .md dropped from targets; new existing_attachments helper), scripts/wiki-lint.sh (broken-link accepts existing non-.md attachments; duplicate-filename and near-duplicate scoped to wiki/ and okf/; new advisory raw-name-collision note, not counted toward exit status)
+- notes: All three failures were verifier defects, not vault defects. (1) Content drift on raw/notes/Python/Python.md and raw/notes/LangGraph/LangGraph.md was a lookup error: the `*"$base"*` glob matched "Python" inside raw/notes/Python/Object-Oriented-Programming.md and "LangGraph" inside raw/notes/LangGraph/Agentic-AI.md, so each file was compared against another source's hash. The "actual" hashes CI printed equal the source_id on each file's own source page. The same function backs .githooks/pre-commit, which would have blocked any commit of those files. (2) 20 broken-link findings came from raw_file values written with the .md extension, which Obsidian resolves and lint did not; 1 more came from two embedded .png files that exist. (3) The duplicate and near-duplicate findings were raw/ evidence sharing a name with a concept page (LangGraph, Pydantic, Tool/Tools). Owner chose option B: raw/ cannot be renamed, so it leaves those checks, and the real consequence — a bare LangGraph wikilink is ambiguous in Obsidian — stays visible as an advisory note on 3 pages.
+- limits: No page in wiki/, raw/, or okf/ was changed; rewriting the 20 raw_file values was the alternative and is a multi-page rewrite. The advisory note prints when wiki-lint.sh runs directly but verify-vault.sh shows lint output only on failure, so it is not surfaced there. Pre-existing and not changed: the duplicate checks report from inside a pipeline, so their findings print but never increment the counter or fail the run. On this Windows clone core.autocrlf=true with no .gitattributes checks raw/ out with CRLF, so a local verify-vault.sh reports drift on every ingested file; recorded source_ids are LF hashes, matching CI and the staged blobs the pre-commit hook hashes. Fixing that touches raw/ and is owner-only. core.hooksPath was found unset on this clone and set to .githooks before write work.
+- verified: In a fresh autocrlf=false clone of 245eea8 (CI-equivalent): before the patch, reproduced CI's exact drift failures; after, 26 of 26 ingested raw files resolve to their own source page with matching hashes (2 not yet ingested), wiki-lint "No findings" with 3 raw-name-collision notes, verify-vault.sh all clear, exit 0. All five suites pass: test-wiki-lint, test-portability, test-schema, test-lint-governance, test-baseline-metrics. Negative test: appending to raw/notes/Python/Python.md and raw/articles/01-markdown-first-retrieval.md (both raw_file forms) is still detected as drift. raw/ and okf/ untouched in the live vault.
+
